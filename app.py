@@ -14,14 +14,16 @@ APP_SUBTITLE = "MISHARP PSD GENERATOR V3"
 
 CANVAS_WIDTH = 900
 
-# ✅ 업로드 최대 장수
-MAX_IMAGES = 10
+# ✅ 분할 규칙
+MAX_PER_PSD = 10          # PSD 1개당 최대 10장
+MAX_TOTAL_IMAGES = 20     # 전체 최대 20장(10장 초과 시 PSD 2개로 분할)
 
 DEFAULT_TOP_PAD = 180
 DEFAULT_BOTTOM_PAD = 250
 DEFAULT_GAP = 300
 
-THUMB_W = 140
+# ✅ 썸네일 크기 절반
+THUMB_W = 70
 
 STATE_ITEMS = "img_items"
 STATE_SEEN = "seen_hashes"
@@ -119,14 +121,13 @@ def _save_jpg_bytes(im: Image.Image) -> bytes:
     return out.getvalue()
 
 
-def _build_jsx(base_name: str, top_pad: int, bottom_pad: int, gap: int, heights: List[int], image_files: List[str]) -> str:
+def _build_jsx(base_name: str, canvas_h: int, top_pad: int, gap: int, heights: List[int], image_files: List[str], images_folder_name: str) -> str:
+    # y positions
     y_positions = []
     y = top_pad
     for h in heights:
         y_positions.append(y)
         y += h + gap
-
-    total_h = top_pad + bottom_pad + sum(heights) + gap * (len(heights) - 1)
 
     lines = []
     lines.append("#target photoshop")
@@ -171,9 +172,9 @@ def _build_jsx(base_name: str, top_pad: int, bottom_pad: int, gap: int, heights:
     lines.append("try {")
     lines.append("  var jsxFile=new File($.fileName);")
     lines.append("  var baseFolder=jsxFile.parent;")
-    lines.append('  var imgFolder=new Folder(baseFolder.fsName + "/images");')
-    lines.append('  if(!imgFolder.exists){ alert("images 폴더 없음: " + imgFolder.fsName); throw new Error("Missing images folder"); }')
-    lines.append(f'  var doc=app.documents.add({CANVAS_WIDTH}, {total_h}, 72, "{base_name}", NewDocumentMode.RGB, DocumentFill.WHITE);')
+    lines.append(f'  var imgFolder=new Folder(baseFolder.fsName + "/{images_folder_name}");')
+    lines.append('  if(!imgFolder.exists){ alert("이미지 폴더 없음: " + imgFolder.fsName); throw new Error("Missing images folder"); }')
+    lines.append(f'  var doc=app.documents.add({CANVAS_WIDTH}, {canvas_h}, 72, "{base_name}", NewDocumentMode.RGB, DocumentFill.WHITE);')
     lines.append("  var files=[];")
     for fn in image_files:
         lines.append(f'  files.push(new File(imgFolder.fsName + "/{fn}"));')
@@ -199,31 +200,49 @@ def _build_jsx(base_name: str, top_pad: int, bottom_pad: int, gap: int, heights:
     return "\n".join(lines)
 
 
-def _build_readme() -> str:
+def _build_readme(max_per_psd: int, max_total: int) -> str:
     return (
-        "MISHARP 상세페이지 생성기 (내부용)\n\n"
+        "MISHARP 상세페이지 생성기 (내부용)\n"
+        "\n"
+        "[규칙]\n"
+        f"- JPG: 전체 이미지 1장으로 생성\n"
+        f"- PSD: {max_per_psd}장 초과 시 자동 2개로 분할\n"
+        f"- 최대 등록: {max_total}장\n"
+        "\n"
         "[다운로드 ZIP 구성]\n"
         "1) 상세페이지 JPG\n"
         "2) PSD 생성용 JSX (Smart Object 유지)\n"
-        "3) images/ 폴더 (PSD에 들어갈 900px 리사이즈 이미지)\n\n"
+        "3) images_part1/ , images_part2/ 폴더(PSD에 들어갈 900px 리사이즈 이미지)\n"
+        "\n"
         "[PSD 생성 방법]\n"
         "1) ZIP 압축 해제\n"
         "2) Photoshop 실행(CS 이상 권장)\n"
         "3) 파일 > 스크립트 > 찾아보기...\n"
         "4) *_psd_build.jsx 실행\n"
-        "5) 같은 폴더에 .psd 생성\n\n"
+        "5) 같은 폴더에 .psd 생성\n"
+        "\n"
         "ⓒ misharpcompany. All rights reserved.\n"
     )
 
 
-def _zip_bundle(base_name: str, jpg_bytes: bytes, jsx_text: str, resized_jpgs: List[Tuple[str, bytes]]) -> bytes:
+def _zip_bundle(
+    base_name: str,
+    jpg_bytes: bytes,
+    jsx_entries: List[Tuple[str, str]],
+    resized_groups: List[Tuple[str, List[Tuple[str, bytes]]]],
+) -> bytes:
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(f"{base_name}.jpg", jpg_bytes)
-        zf.writestr(f"{base_name}_psd_build.jsx", jsx_text)
-        zf.writestr("README.txt", _build_readme())
-        for fn, b in resized_jpgs:
-            zf.writestr(f"images/{fn}", b)
+        zf.writestr("README.txt", _build_readme(MAX_PER_PSD, MAX_TOTAL_IMAGES))
+
+        for jsx_name, jsx_text in jsx_entries:
+            zf.writestr(jsx_name, jsx_text)
+
+        for folder_name, files in resized_groups:
+            for fn, b in files:
+                zf.writestr(f"{folder_name}/{fn}", b)
+
     return out.getvalue()
 
 
@@ -269,8 +288,7 @@ def _add_items_from_uploads(uploaded_files) -> Tuple[int, int]:
     skipped_over_limit = 0
 
     for uf in uploaded_files:
-        # 슬롯 체크(최대 10장)
-        remaining = MAX_IMAGES - len(st.session_state[STATE_ITEMS])
+        remaining = MAX_TOTAL_IMAGES - len(st.session_state[STATE_ITEMS])
         if remaining <= 0:
             skipped_over_limit += 1
             continue
@@ -281,7 +299,7 @@ def _add_items_from_uploads(uploaded_files) -> Tuple[int, int]:
         if name.lower().endswith(".zip"):
             extracted = _extract_zip_images(raw)
             for iname, ibytes in extracted:
-                remaining = MAX_IMAGES - len(st.session_state[STATE_ITEMS])
+                remaining = MAX_TOTAL_IMAGES - len(st.session_state[STATE_ITEMS])
                 if remaining <= 0:
                     skipped_over_limit += 1
                     break
@@ -290,9 +308,6 @@ def _add_items_from_uploads(uploaded_files) -> Tuple[int, int]:
         else:
             if _add_one_image(name, raw):
                 added += 1
-            else:
-                # 중복은 스킵이지만 limit 스킵으로 잡진 않음
-                pass
 
     return added, skipped_over_limit
 
@@ -306,6 +321,7 @@ def _calc_total_height(resized_heights: List[int], top_pad: int, bottom_pad: int
 def _build_outputs(base_name: str, top_pad: int, bottom_pad: int, gap: int):
     items: List[ImgItem] = st.session_state[STATE_ITEMS]
 
+    # safety: unique by sha1 (just in case)
     uniq: List[ImgItem] = []
     seen2 = set()
     for it in items:
@@ -314,30 +330,70 @@ def _build_outputs(base_name: str, top_pad: int, bottom_pad: int, gap: int):
         uniq.append(it)
         seen2.add(it.sha1)
 
-    resized = [_fit_to_width_900(it.pil) for it in uniq]
-    heights = [im.size[1] for im in resized]
+    resized_all = [_fit_to_width_900(it.pil) for it in uniq]
+    heights_all = [im.size[1] for im in resized_all]
 
-    long_img = _compose_long_jpg(resized, top_pad=top_pad, bottom_pad=bottom_pad, gap=gap)
+    # 1) JPG: 전체 1장
+    long_img = _compose_long_jpg(resized_all, top_pad=top_pad, bottom_pad=bottom_pad, gap=gap)
     jpg_bytes = _save_jpg_bytes(long_img)
 
-    resized_files: List[Tuple[str, bytes]] = []
-    image_filenames: List[str] = []
-    for idx, im in enumerate(resized, start=1):
-        fn = f"img_{idx:02d}.jpg"
-        b = _save_jpg_bytes(im)
-        resized_files.append((fn, b))
-        image_filenames.append(fn)
+    # 2) PSD: 10장 초과면 2개로 분할
+    parts: List[List[Image.Image]] = []
+    if len(resized_all) <= MAX_PER_PSD:
+        parts = [resized_all]
+    else:
+        parts = [resized_all[:MAX_PER_PSD], resized_all[MAX_PER_PSD:]]
 
-    jsx = _build_jsx(base_name=base_name, top_pad=top_pad, bottom_pad=bottom_pad, gap=gap, heights=heights, image_files=image_filenames)
-    zip_bytes = _zip_bundle(base_name=base_name, jpg_bytes=jpg_bytes, jsx_text=jsx, resized_jpgs=resized_files)
+    jsx_entries: List[Tuple[str, str]] = []
+    resized_groups: List[Tuple[str, List[Tuple[str, bytes]]]] = []
+
+    for pi, part_imgs in enumerate(parts, start=1):
+        part_heights = [im.size[1] for im in part_imgs]
+        part_canvas_h = _calc_total_height(part_heights, top_pad, bottom_pad, gap)
+
+        # 저장 파일명/폴더명
+        part_suffix = f"part{pi}"
+        part_base = f"{base_name}_{part_suffix}" if len(parts) > 1 else base_name
+        folder_name = f"images_{part_suffix}" if len(parts) > 1 else "images"
+
+        # images 저장
+        files: List[Tuple[str, bytes]] = []
+        fns: List[str] = []
+        for idx, im in enumerate(part_imgs, start=1):
+            fn = f"img_{idx:02d}.jpg"
+            files.append((fn, _save_jpg_bytes(im)))
+            fns.append(fn)
+        resized_groups.append((folder_name, files))
+
+        # JSX 생성
+        jsx_text = _build_jsx(
+            base_name=part_base,
+            canvas_h=part_canvas_h,
+            top_pad=top_pad,
+            gap=gap,
+            heights=part_heights,
+            image_files=fns,
+            images_folder_name=folder_name,
+        )
+        jsx_name = f"{part_base}_psd_build.jsx"
+        jsx_entries.append((jsx_name, jsx_text))
 
     meta = {
-        "count": len(resized),
-        "total_height": _calc_total_height(heights, top_pad, bottom_pad, gap),
+        "count": len(resized_all),
+        "total_height": _calc_total_height(heights_all, top_pad, bottom_pad, gap),
         "top": top_pad,
         "bottom": bottom_pad,
         "gap": gap,
+        "psd_parts": len(parts),
     }
+
+    zip_bytes = _zip_bundle(
+        base_name=base_name,
+        jpg_bytes=jpg_bytes,
+        jsx_entries=jsx_entries,
+        resized_groups=resized_groups,
+    )
+
     return jpg_bytes, zip_bytes, meta
 
 
@@ -350,7 +406,6 @@ def main():
         <div style="padding:14px 0 8px 0;">
           <div style="font-size:28px; font-weight:800; letter-spacing:-0.5px;">{APP_TITLE}</div>
           <div style="font-size:13px; opacity:0.7; margin-top:2px;">{APP_SUBTITLE}</div>
-          <div style="font-size:12px; opacity:0.65; margin-top:6px;">업로드 가능 장수: 최대 {MAX_IMAGES}장</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -358,28 +413,29 @@ def main():
 
     left, right = st.columns([1.25, 0.75], gap="large")
 
+    # ---------------- LEFT ----------------
     with left:
         st.markdown("### 1) 업로드")
         cA, cB = st.columns([0.65, 0.35])
         with cA:
             uploaded = st.file_uploader(
-                f"JPG/PNG/GIF/WEBP/ZIP 업로드 (최대 {MAX_IMAGES}장까지 목록에 추가)",
+                "JPG / PNG / GIF / WEBP / ZIP 업로드 가능",
                 type=["jpg", "jpeg", "png", "gif", "webp", "zip"],
                 accept_multiple_files=True,
                 label_visibility="collapsed",
                 key="uploader",
             )
         with cB:
-            replace_mode = st.checkbox("교체 업로드(기존 초기화)", value=False)
+            replace_mode = st.checkbox("기존 목록 비우고 새로 담기", value=False)
 
         current_count = len(st.session_state[STATE_ITEMS])
-        st.caption(f"현재 목록: {current_count}/{MAX_IMAGES}장")
+        st.caption(f"현재 목록: {current_count}/{MAX_TOTAL_IMAGES}장 (10장 초과 시 PSD 2개 자동 생성)")
 
         add_clicked = st.button(
             "업로드 파일 목록에 추가",
             type="primary",
             use_container_width=True,
-            disabled=(not uploaded) or (current_count >= MAX_IMAGES and not replace_mode),
+            disabled=(not uploaded) or (current_count >= MAX_TOTAL_IMAGES and not replace_mode),
         )
 
         if add_clicked and uploaded:
@@ -391,7 +447,7 @@ def main():
             else:
                 st.success(f"추가 완료: 새 이미지 {added}개")
             if skipped_limit > 0:
-                st.warning(f"최대 {MAX_IMAGES}장 제한으로 {skipped_limit}개 파일(또는 ZIP 내 이미지)이 추가되지 않았습니다.")
+                st.warning(f"최대 {MAX_TOTAL_IMAGES}장 제한으로 {skipped_limit}개 파일(또는 ZIP 내 이미지)이 추가되지 않았습니다.")
 
         st.markdown("### 2) 레이아웃 설정")
         c1, c2 = st.columns([0.55, 0.45])
@@ -413,11 +469,12 @@ def main():
             st.info("업로드된 이미지가 없습니다.")
         else:
             for i, it in enumerate(items):
-                row = st.columns([0.20, 0.50, 0.10, 0.10, 0.10])
+                # 썸네일 작아졌으니 비율 조정
+                row = st.columns([0.14, 0.56, 0.10, 0.10, 0.10])
                 with row[0]:
                     st.image(_make_thumb(it.pil), use_column_width=True)
                 with row[1]:
-                    short = it.name if len(it.name) <= 40 else (it.name[:37] + "...")
+                    short = it.name if len(it.name) <= 44 else (it.name[:41] + "...")
                     st.markdown(f"**{i+1}. {short}**  \n원본: {it.pil.size[0]}×{it.pil.size[1]}")
                 with row[2]:
                     up = st.button("▲", key=f"up_{i}", disabled=(i == 0), use_container_width=True)
@@ -455,12 +512,18 @@ def main():
                 st.rerun()
 
         if gen:
-            jpg_bytes, zip_bytes, meta = _build_outputs(base_name=base_name, top_pad=int(top_pad), bottom_pad=int(bottom_pad), gap=int(gap))
+            jpg_bytes, zip_bytes, meta = _build_outputs(
+                base_name=base_name,
+                top_pad=int(top_pad),
+                bottom_pad=int(bottom_pad),
+                gap=int(gap),
+            )
             st.session_state[STATE_LAST_PREVIEW] = jpg_bytes
             st.session_state[STATE_LAST_ZIP] = zip_bytes
             st.session_state[STATE_LAST_META] = meta
             st.success("생성 완료! 오른쪽에서 미리보기/다운로드 하세요.")
 
+    # ---------------- RIGHT ----------------
     with right:
         st.markdown("### 미리보기")
         meta = st.session_state[STATE_LAST_META]
@@ -468,7 +531,11 @@ def main():
         zip_bytes = st.session_state[STATE_LAST_ZIP]
 
         if meta and jpg_bytes:
-            st.caption(f"총 {meta['count']}장 · 최종 높이 {meta['total_height']:,}px · 상단 {meta['top']} / 하단 {meta['bottom']} / 간격 {meta['gap']}px")
+            parts_txt = "1개" if meta.get("psd_parts", 1) == 1 else f"{meta['psd_parts']}개(자동 분할)"
+            st.caption(
+                f"총 {meta['count']}장 · 최종 높이 {meta['total_height']:,}px · "
+                f"상단 {meta['top']} / 하단 {meta['bottom']} / 간격 {meta['gap']}px · PSD: {parts_txt}"
+            )
             st.image(jpg_bytes, use_column_width=True)
 
             st.markdown("### 다운로드")
@@ -492,11 +559,17 @@ def main():
         with st.expander("사용방법", expanded=True):
             st.markdown(
                 f"""
-**1) 업로드 → ‘업로드 파일 목록에 추가’** (최대 {MAX_IMAGES}장)  
-**2) 순서/여백 확인**  
-**3) ‘상세페이지 생성하기’ → 오른쪽에서 다운로드**
+**업로드 규칙**
+- 권장: 보통 5장 내외
+- 최대: {MAX_TOTAL_IMAGES}장까지 목록 등록 가능
+- {MAX_PER_PSD}장 초과 시: PSD는 자동으로 2개로 분할 생성
 
-**PSD 만들기(중요)**  
+**사용 순서**
+1) 업로드 → ‘업로드 파일 목록에 추가’  
+2) 순서/여백 확인  
+3) ‘상세페이지 생성하기’ → 오른쪽에서 다운로드
+
+**PSD 만들기(중요)**
 1) ZIP 압축 해제  
 2) Photoshop 실행(CS 이상 권장)  
 3) `파일 > 스크립트 > 찾아보기...`  
