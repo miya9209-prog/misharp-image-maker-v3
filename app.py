@@ -60,13 +60,10 @@ def _open_image_any(data: bytes) -> Image.Image:
 
 
 def _fit_to_width_900(im: Image.Image, width: int = CANVAS_WIDTH) -> Image.Image:
-    """
-    자르기 금지. 비율 유지 리사이즈만.
-    """
+    """자르기 금지. 비율 유지 리사이즈만."""
     w, h = im.size
     if w == width:
         return im.convert("RGB") if im.mode != "RGB" else im
-
     scale = width / float(w)
     new_h = int(round(h * scale))
     resized = im.resize((width, new_h), resample=Image.Resampling.LANCZOS)
@@ -84,10 +81,7 @@ def _make_thumb(im: Image.Image, w: int = THUMB_W) -> bytes:
 
 
 def _extract_zip_images(zip_bytes: bytes) -> List[Tuple[str, bytes]]:
-    """
-    ZIP 자동 해제 후 이미지 파일만 추출.
-    zip 내부 파일 순서 유지(infolist 순회).
-    """
+    """ZIP 자동 해제 후 이미지 파일만 추출(내부 순서 유지)."""
     out: List[Tuple[str, bytes]] = []
     with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
         for info in zf.infolist():
@@ -102,7 +96,6 @@ def _extract_zip_images(zip_bytes: bytes) -> List[Tuple[str, bytes]]:
 def _compose_long_jpg(resized_images: List[Image.Image], top_pad: int, bottom_pad: int, gap: int) -> Image.Image:
     if not resized_images:
         raise ValueError("No images")
-
     heights = [im.size[1] for im in resized_images]
     total_h = top_pad + bottom_pad + sum(heights) + gap * (len(resized_images) - 1)
 
@@ -123,6 +116,12 @@ def _save_jpg_bytes(im: Image.Image) -> bytes:
 
 
 def _build_jsx(base_name: str, top_pad: int, bottom_pad: int, gap: int, heights: List[int], image_files: List[str]) -> str:
+    """
+    ✅ Photoshop ExtendScript(JSX)
+    - 가장 중요: Ruler Units를 픽셀로 강제 (CS에서 8800 오류 예방)
+    - translate가 큰 값이면 쪼개서 이동 (추가 안정장치)
+    """
+    # y positions
     y_positions = []
     y = top_pad
     for h in heights:
@@ -135,10 +134,21 @@ def _build_jsx(base_name: str, top_pad: int, bottom_pad: int, gap: int, heights:
     lines.append("#target photoshop")
     lines.append("app.displayDialogs = DialogModes.NO;")
     lines.append("")
+    lines.append("// --- Force pixel units (critical for PS CS/older versions) ---")
+    lines.append("var _oldRulerUnits = app.preferences.rulerUnits;")
+    lines.append("var _oldTypeUnits  = app.preferences.typeUnits;")
+    lines.append("app.preferences.rulerUnits = Units.PIXELS;")
+    lines.append("app.preferences.typeUnits  = TypeUnits.PIXELS;")
+    lines.append("")
+    lines.append("function _restoreUnits() {")
+    lines.append("  app.preferences.rulerUnits = _oldRulerUnits;")
+    lines.append("  app.preferences.typeUnits  = _oldTypeUnits;")
+    lines.append("}")
+    lines.append("")
     lines.append("function placeSmartObject(file) {")
     lines.append("  var desc = new ActionDescriptor();")
     lines.append('  desc.putPath(charIDToTypeID("null"), file);')
-    lines.append('  desc.putEnumerated(charIDToTypeID("FTcs"), charIDToTypeID("QCSt"), charIDToTypeID("Qcs0"));')
+    lines.append('  desc.putEnumerated(charIDToTypeID("FTcs"), charIDToTypeID("QCSt"), charIDToTypeID("Qcs0")); // top-left')
     lines.append("  var ofs = new ActionDescriptor();")
     lines.append('  ofs.putUnitDouble(charIDToTypeID("Hrzn"), charIDToTypeID("#Pxl"), 0);')
     lines.append('  ofs.putUnitDouble(charIDToTypeID("Vrtc"), charIDToTypeID("#Pxl"), 0);')
@@ -146,45 +156,66 @@ def _build_jsx(base_name: str, top_pad: int, bottom_pad: int, gap: int, heights:
     lines.append('  executeAction(charIDToTypeID("Plc "), desc, DialogModes.NO);')
     lines.append("}")
     lines.append("")
+    lines.append("function safeTranslate(layer, dx, dy) {")
+    lines.append("  // Large translate can fail in older PS -> move in chunks")
+    lines.append("  var maxStep = 5000;")
+    lines.append("  var sx = dx, sy = dy;")
+    lines.append("  while (Math.abs(sx) > maxStep || Math.abs(sy) > maxStep) {")
+    lines.append("    var stepX = Math.max(-maxStep, Math.min(maxStep, sx));")
+    lines.append("    var stepY = Math.max(-maxStep, Math.min(maxStep, sy));")
+    lines.append("    layer.translate(stepX, stepY);")
+    lines.append("    sx -= stepX;")
+    lines.append("    sy -= stepY;")
+    lines.append("  }")
+    lines.append("  if (sx !== 0 || sy !== 0) layer.translate(sx, sy);")
+    lines.append("}")
+    lines.append("")
     lines.append("function moveLayerToXY(layer, x, y) {")
     lines.append("  var b = layer.bounds;")
     lines.append('  var left = b[0].as("px");')
-    lines.append('  var top = b[1].as("px");')
-    lines.append("  layer.translate(x - left, y - top);")
+    lines.append('  var top  = b[1].as("px");')
+    lines.append("  var dx = x - left;")
+    lines.append("  var dy = y - top;")
+    lines.append("  safeTranslate(layer, dx, dy);")
     lines.append("}")
     lines.append("")
-    lines.append("var jsxFile = new File($.fileName);")
-    lines.append("var baseFolder = jsxFile.parent;")
-    lines.append('var imgFolder = new Folder(baseFolder.fsName + "/images");')
-    lines.append('if (!imgFolder.exists) { alert("images 폴더를 찾을 수 없습니다: " + imgFolder.fsName); throw new Error("Missing images folder"); }')
+    lines.append("try {")
+    lines.append("  var jsxFile = new File($.fileName);")
+    lines.append("  var baseFolder = jsxFile.parent;")
+    lines.append('  var imgFolder = new Folder(baseFolder.fsName + "/images");')
+    lines.append('  if (!imgFolder.exists) { alert("images 폴더를 찾을 수 없습니다: " + imgFolder.fsName); throw new Error("Missing images folder"); }')
     lines.append("")
-    lines.append(f'var doc = app.documents.add({CANVAS_WIDTH}, {total_h}, 72, "{base_name}", NewDocumentMode.RGB, DocumentFill.WHITE);')
+    lines.append(f'  var doc = app.documents.add({CANVAS_WIDTH}, {total_h}, 72, "{base_name}", NewDocumentMode.RGB, DocumentFill.WHITE);')
     lines.append("")
-    lines.append("var files = [];")
+    lines.append("  var files = [];")
     for fn in image_files:
-        lines.append(f'files.push(new File(imgFolder.fsName + "/{fn}"));')
+        lines.append(f'  files.push(new File(imgFolder.fsName + "/{fn}"));')
     lines.append("")
-    lines.append("var ys = [")
+    lines.append("  var ys = [")
     for i, yp in enumerate(y_positions):
         comma = "," if i != len(y_positions) - 1 else ""
-        lines.append(f"  {int(yp)}{comma}")
-    lines.append("];")
+        lines.append(f"    {int(yp)}{comma}")
+    lines.append("  ];")
     lines.append("")
-    lines.append("for (var i = 0; i < files.length; i++) {")
-    lines.append("  if (!files[i].exists) { alert('이미지 파일 없음: ' + files[i].fsName); throw new Error('Missing file'); }")
-    lines.append("  placeSmartObject(files[i]);")
-    lines.append("  var layer = doc.activeLayer;")
-    lines.append("  moveLayerToXY(layer, 0, ys[i]);")
-    lines.append('  layer.name = "IMG_" + (i+1);')
+    lines.append("  for (var i = 0; i < files.length; i++) {")
+    lines.append("    if (!files[i].exists) { alert('이미지 파일 없음: ' + files[i].fsName); throw new Error('Missing file'); }")
+    lines.append("    placeSmartObject(files[i]);")
+    lines.append("    var layer = doc.activeLayer;")
+    lines.append("    moveLayerToXY(layer, 0, ys[i]);")
+    lines.append('    layer.name = "IMG_" + (i+1);')
+    lines.append("  }")
+    lines.append("")
+    lines.append(f'  var outPsd = new File(baseFolder.fsName + "/{base_name}.psd");')
+    lines.append("  var psdOpt = new PhotoshopSaveOptions();")
+    lines.append("  psdOpt.embedColorProfile = true;")
+    lines.append("  psdOpt.maximizeCompatibility = true;")
+    lines.append("  doc.saveAs(outPsd, psdOpt, true, Extension.LOWERCASE);")
+    lines.append('  alert("PSD 생성 완료: " + outPsd.fsName);')
+    lines.append("} catch(e) {")
+    lines.append('  alert("PSD 생성 중 오류: " + e);')
+    lines.append("} finally {")
+    lines.append("  _restoreUnits();")
     lines.append("}")
-    lines.append("")
-    lines.append(f'var outPsd = new File(baseFolder.fsName + "/{base_name}.psd");')
-    lines.append("var psdOpt = new PhotoshopSaveOptions();")
-    lines.append("psdOpt.embedColorProfile = true;")
-    lines.append("psdOpt.maximizeCompatibility = true;")
-    lines.append("doc.saveAs(outPsd, psdOpt, true, Extension.LOWERCASE);")
-    lines.append('alert("PSD 생성 완료: " + outPsd.fsName);')
-
     return "\n".join(lines)
 
 
@@ -227,19 +258,14 @@ def _init_state():
         st.session_state[STATE_SEEN] = set()
 
 
-def _add_one_image(name: str, raw: bytes):
-    """
-    ✅ 핵심: raw 바이트 sha1으로 중복 방지
-    - Streamlit rerun이 몇 번 나도 같은 파일은 1번만 들어감
-    """
+def _add_one_image(name: str, raw: bytes) -> bool:
     h = _sha1(raw)
     seen = st.session_state[STATE_SEEN]
     if h in seen:
-        return False  # 중복이라 스킵
+        return False
 
     im = _open_image_any(raw)
     ext = os.path.splitext(name)[1].lower().lstrip(".") or "jpg"
-
     st.session_state[STATE_ITEMS].append(ImgItem(name=name, bytes_data=raw, pil=im, ext=ext, sha1=h))
     seen.add(h)
     st.session_state[STATE_SEEN] = seen
@@ -247,27 +273,18 @@ def _add_one_image(name: str, raw: bytes):
 
 
 def _add_items_from_uploads(uploaded_files) -> int:
-    """
-    업로드 파일들(이미지/zip)을 읽어서 목록에 추가.
-    중복은 sha1로 자동 차단.
-    """
-    added_count = 0
-
+    added = 0
     for uf in uploaded_files:
-        # ✅ uf.read()는 rerun에서 꼬일 수 있으니 getvalue() 사용
         raw = uf.getvalue()
         name = uf.name
-
         if name.lower().endswith(".zip"):
-            extracted = _extract_zip_images(raw)
-            for iname, ibytes in extracted:
+            for iname, ibytes in _extract_zip_images(raw):
                 if _add_one_image(iname, ibytes):
-                    added_count += 1
+                    added += 1
         else:
             if _add_one_image(name, raw):
-                added_count += 1
-
-    return added_count
+                added += 1
+    return added
 
 
 def _reset_all():
@@ -304,7 +321,6 @@ def main():
             key="uploader",
         )
 
-        # ✅ 업로드를 즉시 누적하지 않고, 버튼으로 “한 번만 추가”
         add_clicked = st.button("업로드 파일 목록에 추가", use_container_width=True, disabled=not uploaded)
 
         if add_clicked and uploaded:
@@ -366,7 +382,6 @@ def main():
                 if delete:
                     removed = items.pop(i)
                     st.session_state[STATE_ITEMS] = items
-                    # ✅ 삭제한 항목의 해시도 seen에서 제거(재업로드 가능)
                     seen = st.session_state[STATE_SEEN]
                     if removed.sha1 in seen:
                         seen.remove(removed.sha1)
@@ -386,8 +401,8 @@ def main():
 
             src_items = st.session_state[STATE_ITEMS]
 
-            # ✅ 최종 안전장치: 혹시라도 들어온 중복(같은 sha1)이 있으면 생성 시 1번만 사용
-            uniq = []
+            # 최종 안전장치: 같은 sha1이 들어있으면 1번만 사용
+            uniq: List[ImgItem] = []
             seen2 = set()
             for it in src_items:
                 if it.sha1 in seen2:
