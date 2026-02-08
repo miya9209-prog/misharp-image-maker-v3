@@ -1,5 +1,6 @@
 import io
 import os
+import re
 import zipfile
 import hashlib
 from dataclasses import dataclass
@@ -13,16 +14,20 @@ APP_SUBTITLE = "MISHARP PSD GENERATOR V3"
 
 CANVAS_WIDTH = 900
 
-# 샘플 상세페이지 기반 기본값(900px 환산)
+# ✅ 업로드 최대 장수
+MAX_IMAGES = 10
+
 DEFAULT_TOP_PAD = 180
 DEFAULT_BOTTOM_PAD = 250
 DEFAULT_GAP = 300
 
 THUMB_W = 140
 
-# ✅ session_state 안전 키
 STATE_ITEMS = "img_items"
-STATE_SEEN = "seen_hashes"  # 중복 방지용
+STATE_SEEN = "seen_hashes"
+STATE_LAST_PREVIEW = "last_preview_jpg"
+STATE_LAST_ZIP = "last_bundle_zip"
+STATE_LAST_META = "last_meta"
 
 
 @dataclass
@@ -31,11 +36,20 @@ class ImgItem:
     bytes_data: bytes
     pil: Image.Image
     ext: str
-    sha1: str  # 원본 바이트 기준 해시(중복 방지)
+    sha1: str
 
 
 def _sha1(data: bytes) -> str:
     return hashlib.sha1(data).hexdigest()
+
+
+def _sanitize_filename(name: str) -> str:
+    name = name.strip()
+    if not name:
+        return "misharp_detailpage"
+    name = re.sub(r"\s+", "_", name)
+    name = re.sub(r"[^0-9A-Za-z가-힣_\-]+", "", name)
+    return name[:80] or "misharp_detailpage"
 
 
 def _is_image_filename(fn: str) -> bool:
@@ -44,23 +58,16 @@ def _is_image_filename(fn: str) -> bool:
 
 
 def _open_image_any(data: bytes) -> Image.Image:
-    """
-    색보정/필터 없이 로딩.
-    GIF(애니메이션)는 첫 프레임만 사용.
-    """
     im = Image.open(io.BytesIO(data))
     if getattr(im, "is_animated", False):
         frame0 = next(ImageSequence.Iterator(im))
         im = frame0.copy()
-
-    # JPG 저장을 위해 RGB/RGBA만 정리(컬러 보정/자동보정은 절대 안함)
     if im.mode not in ("RGB", "RGBA"):
         im = im.convert("RGB")
     return im
 
 
 def _fit_to_width_900(im: Image.Image, width: int = CANVAS_WIDTH) -> Image.Image:
-    """자르기 금지. 비율 유지 리사이즈만."""
     w, h = im.size
     if w == width:
         return im.convert("RGB") if im.mode != "RGB" else im
@@ -81,7 +88,6 @@ def _make_thumb(im: Image.Image, w: int = THUMB_W) -> bytes:
 
 
 def _extract_zip_images(zip_bytes: bytes) -> List[Tuple[str, bytes]]:
-    """ZIP 자동 해제 후 이미지 파일만 추출(내부 순서 유지)."""
     out: List[Tuple[str, bytes]] = []
     with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
         for info in zf.infolist():
@@ -94,8 +100,6 @@ def _extract_zip_images(zip_bytes: bytes) -> List[Tuple[str, bytes]]:
 
 
 def _compose_long_jpg(resized_images: List[Image.Image], top_pad: int, bottom_pad: int, gap: int) -> Image.Image:
-    if not resized_images:
-        raise ValueError("No images")
     heights = [im.size[1] for im in resized_images]
     total_h = top_pad + bottom_pad + sum(heights) + gap * (len(resized_images) - 1)
 
@@ -116,12 +120,6 @@ def _save_jpg_bytes(im: Image.Image) -> bytes:
 
 
 def _build_jsx(base_name: str, top_pad: int, bottom_pad: int, gap: int, heights: List[int], image_files: List[str]) -> str:
-    """
-    ✅ Photoshop ExtendScript(JSX)
-    - 가장 중요: Ruler Units를 픽셀로 강제 (CS에서 8800 오류 예방)
-    - translate가 큰 값이면 쪼개서 이동 (추가 안정장치)
-    """
-    # y positions
     y_positions = []
     y = top_pad
     for h in heights:
@@ -134,109 +132,87 @@ def _build_jsx(base_name: str, top_pad: int, bottom_pad: int, gap: int, heights:
     lines.append("#target photoshop")
     lines.append("app.displayDialogs = DialogModes.NO;")
     lines.append("")
-    lines.append("// --- Force pixel units (critical for PS CS/older versions) ---")
     lines.append("var _oldRulerUnits = app.preferences.rulerUnits;")
     lines.append("var _oldTypeUnits  = app.preferences.typeUnits;")
     lines.append("app.preferences.rulerUnits = Units.PIXELS;")
     lines.append("app.preferences.typeUnits  = TypeUnits.PIXELS;")
+    lines.append("function _restoreUnits(){ app.preferences.rulerUnits=_oldRulerUnits; app.preferences.typeUnits=_oldTypeUnits; }")
     lines.append("")
-    lines.append("function _restoreUnits() {")
-    lines.append("  app.preferences.rulerUnits = _oldRulerUnits;")
-    lines.append("  app.preferences.typeUnits  = _oldTypeUnits;")
-    lines.append("}")
-    lines.append("")
-    lines.append("function placeSmartObject(file) {")
-    lines.append("  var desc = new ActionDescriptor();")
+    lines.append("function placeSmartObject(file){")
+    lines.append("  var desc=new ActionDescriptor();")
     lines.append('  desc.putPath(charIDToTypeID("null"), file);')
-    lines.append('  desc.putEnumerated(charIDToTypeID("FTcs"), charIDToTypeID("QCSt"), charIDToTypeID("Qcs0")); // top-left')
-    lines.append("  var ofs = new ActionDescriptor();")
+    lines.append('  desc.putEnumerated(charIDToTypeID("FTcs"), charIDToTypeID("QCSt"), charIDToTypeID("Qcs0"));')
+    lines.append("  var ofs=new ActionDescriptor();")
     lines.append('  ofs.putUnitDouble(charIDToTypeID("Hrzn"), charIDToTypeID("#Pxl"), 0);')
     lines.append('  ofs.putUnitDouble(charIDToTypeID("Vrtc"), charIDToTypeID("#Pxl"), 0);')
     lines.append('  desc.putObject(charIDToTypeID("Ofst"), charIDToTypeID("Ofst"), ofs);')
     lines.append('  executeAction(charIDToTypeID("Plc "), desc, DialogModes.NO);')
     lines.append("}")
     lines.append("")
-    lines.append("function safeTranslate(layer, dx, dy) {")
-    lines.append("  // Large translate can fail in older PS -> move in chunks")
-    lines.append("  var maxStep = 5000;")
-    lines.append("  var sx = dx, sy = dy;")
-    lines.append("  while (Math.abs(sx) > maxStep || Math.abs(sy) > maxStep) {")
-    lines.append("    var stepX = Math.max(-maxStep, Math.min(maxStep, sx));")
-    lines.append("    var stepY = Math.max(-maxStep, Math.min(maxStep, sy));")
+    lines.append("function safeTranslate(layer, dx, dy){")
+    lines.append("  var maxStep=5000;")
+    lines.append("  var sx=dx, sy=dy;")
+    lines.append("  while(Math.abs(sx)>maxStep || Math.abs(sy)>maxStep){")
+    lines.append("    var stepX=Math.max(-maxStep, Math.min(maxStep, sx));")
+    lines.append("    var stepY=Math.max(-maxStep, Math.min(maxStep, sy));")
     lines.append("    layer.translate(stepX, stepY);")
-    lines.append("    sx -= stepX;")
-    lines.append("    sy -= stepY;")
+    lines.append("    sx-=stepX; sy-=stepY;")
     lines.append("  }")
-    lines.append("  if (sx !== 0 || sy !== 0) layer.translate(sx, sy);")
+    lines.append("  if(sx!==0 || sy!==0) layer.translate(sx, sy);")
     lines.append("}")
     lines.append("")
-    lines.append("function moveLayerToXY(layer, x, y) {")
-    lines.append("  var b = layer.bounds;")
-    lines.append('  var left = b[0].as("px");')
-    lines.append('  var top  = b[1].as("px");')
-    lines.append("  var dx = x - left;")
-    lines.append("  var dy = y - top;")
-    lines.append("  safeTranslate(layer, dx, dy);")
+    lines.append("function moveLayerToXY(layer, x, y){")
+    lines.append("  var b=layer.bounds;")
+    lines.append('  var left=b[0].as("px");')
+    lines.append('  var top=b[1].as("px");')
+    lines.append("  safeTranslate(layer, x-left, y-top);")
     lines.append("}")
     lines.append("")
     lines.append("try {")
-    lines.append("  var jsxFile = new File($.fileName);")
-    lines.append("  var baseFolder = jsxFile.parent;")
-    lines.append('  var imgFolder = new Folder(baseFolder.fsName + "/images");')
-    lines.append('  if (!imgFolder.exists) { alert("images 폴더를 찾을 수 없습니다: " + imgFolder.fsName); throw new Error("Missing images folder"); }')
-    lines.append("")
-    lines.append(f'  var doc = app.documents.add({CANVAS_WIDTH}, {total_h}, 72, "{base_name}", NewDocumentMode.RGB, DocumentFill.WHITE);')
-    lines.append("")
-    lines.append("  var files = [];")
+    lines.append("  var jsxFile=new File($.fileName);")
+    lines.append("  var baseFolder=jsxFile.parent;")
+    lines.append('  var imgFolder=new Folder(baseFolder.fsName + "/images");')
+    lines.append('  if(!imgFolder.exists){ alert("images 폴더 없음: " + imgFolder.fsName); throw new Error("Missing images folder"); }')
+    lines.append(f'  var doc=app.documents.add({CANVAS_WIDTH}, {total_h}, 72, "{base_name}", NewDocumentMode.RGB, DocumentFill.WHITE);')
+    lines.append("  var files=[];")
     for fn in image_files:
         lines.append(f'  files.push(new File(imgFolder.fsName + "/{fn}"));')
-    lines.append("")
-    lines.append("  var ys = [")
+    lines.append("  var ys=[")
     for i, yp in enumerate(y_positions):
         comma = "," if i != len(y_positions) - 1 else ""
         lines.append(f"    {int(yp)}{comma}")
     lines.append("  ];")
-    lines.append("")
-    lines.append("  for (var i = 0; i < files.length; i++) {")
-    lines.append("    if (!files[i].exists) { alert('이미지 파일 없음: ' + files[i].fsName); throw new Error('Missing file'); }")
+    lines.append("  for(var i=0;i<files.length;i++){")
+    lines.append("    if(!files[i].exists){ alert('이미지 파일 없음: ' + files[i].fsName); throw new Error('Missing file'); }")
     lines.append("    placeSmartObject(files[i]);")
-    lines.append("    var layer = doc.activeLayer;")
+    lines.append("    var layer=doc.activeLayer;")
     lines.append("    moveLayerToXY(layer, 0, ys[i]);")
-    lines.append('    layer.name = "IMG_" + (i+1);')
+    lines.append('    layer.name="IMG_" + (i+1);')
     lines.append("  }")
-    lines.append("")
-    lines.append(f'  var outPsd = new File(baseFolder.fsName + "/{base_name}.psd");')
-    lines.append("  var psdOpt = new PhotoshopSaveOptions();")
-    lines.append("  psdOpt.embedColorProfile = true;")
-    lines.append("  psdOpt.maximizeCompatibility = true;")
+    lines.append(f'  var outPsd=new File(baseFolder.fsName + "/{base_name}.psd");')
+    lines.append("  var psdOpt=new PhotoshopSaveOptions();")
+    lines.append("  psdOpt.embedColorProfile=true;")
+    lines.append("  psdOpt.maximizeCompatibility=true;")
     lines.append("  doc.saveAs(outPsd, psdOpt, true, Extension.LOWERCASE);")
     lines.append('  alert("PSD 생성 완료: " + outPsd.fsName);')
-    lines.append("} catch(e) {")
-    lines.append('  alert("PSD 생성 중 오류: " + e);')
-    lines.append("} finally {")
-    lines.append("  _restoreUnits();")
-    lines.append("}")
+    lines.append("} catch(e) { alert('PSD 생성 오류: ' + e); } finally { _restoreUnits(); }")
     return "\n".join(lines)
 
 
 def _build_readme() -> str:
     return (
-        "MISHARP 상세페이지 생성기 (내부용)\n"
-        "\n"
+        "MISHARP 상세페이지 생성기 (내부용)\n\n"
         "[다운로드 ZIP 구성]\n"
         "1) 상세페이지 JPG\n"
         "2) PSD 생성용 JSX (Smart Object 유지)\n"
-        "3) images/ 폴더 (PSD에 들어갈 900px 리사이즈 이미지)\n"
-        "\n"
+        "3) images/ 폴더 (PSD에 들어갈 900px 리사이즈 이미지)\n\n"
         "[PSD 생성 방법]\n"
         "1) ZIP 압축 해제\n"
-        "2) Adobe Photoshop 실행 (CS 이상 권장)\n"
+        "2) Photoshop 실행(CS 이상 권장)\n"
         "3) 파일 > 스크립트 > 찾아보기...\n"
-        "4) *_psd_build.jsx 선택 후 실행\n"
-        "5) 같은 폴더에 .psd가 생성됩니다.\n"
-        "\n"
+        "4) *_psd_build.jsx 실행\n"
+        "5) 같은 폴더에 .psd 생성\n\n"
         "ⓒ misharpcompany. All rights reserved.\n"
-        "본 프로그램은 미샵컴퍼니 내부 직원 전용입니다.\n"
     )
 
 
@@ -256,6 +232,20 @@ def _init_state():
         st.session_state[STATE_ITEMS] = []
     if STATE_SEEN not in st.session_state:
         st.session_state[STATE_SEEN] = set()
+    if STATE_LAST_PREVIEW not in st.session_state:
+        st.session_state[STATE_LAST_PREVIEW] = None
+    if STATE_LAST_ZIP not in st.session_state:
+        st.session_state[STATE_LAST_ZIP] = None
+    if STATE_LAST_META not in st.session_state:
+        st.session_state[STATE_LAST_META] = None
+
+
+def _reset_all():
+    st.session_state[STATE_ITEMS] = []
+    st.session_state[STATE_SEEN] = set()
+    st.session_state[STATE_LAST_PREVIEW] = None
+    st.session_state[STATE_LAST_ZIP] = None
+    st.session_state[STATE_LAST_META] = None
 
 
 def _add_one_image(name: str, raw: bytes) -> bool:
@@ -263,7 +253,6 @@ def _add_one_image(name: str, raw: bytes) -> bool:
     seen = st.session_state[STATE_SEEN]
     if h in seen:
         return False
-
     im = _open_image_any(raw)
     ext = os.path.splitext(name)[1].lower().lstrip(".") or "jpg"
     st.session_state[STATE_ITEMS].append(ImgItem(name=name, bytes_data=raw, pil=im, ext=ext, sha1=h))
@@ -272,24 +261,84 @@ def _add_one_image(name: str, raw: bytes) -> bool:
     return True
 
 
-def _add_items_from_uploads(uploaded_files) -> int:
+def _add_items_from_uploads(uploaded_files) -> Tuple[int, int]:
+    """
+    returns: (added_count, skipped_over_limit_count)
+    """
     added = 0
+    skipped_over_limit = 0
+
     for uf in uploaded_files:
+        # 슬롯 체크(최대 10장)
+        remaining = MAX_IMAGES - len(st.session_state[STATE_ITEMS])
+        if remaining <= 0:
+            skipped_over_limit += 1
+            continue
+
         raw = uf.getvalue()
         name = uf.name
+
         if name.lower().endswith(".zip"):
-            for iname, ibytes in _extract_zip_images(raw):
+            extracted = _extract_zip_images(raw)
+            for iname, ibytes in extracted:
+                remaining = MAX_IMAGES - len(st.session_state[STATE_ITEMS])
+                if remaining <= 0:
+                    skipped_over_limit += 1
+                    break
                 if _add_one_image(iname, ibytes):
                     added += 1
         else:
             if _add_one_image(name, raw):
                 added += 1
-    return added
+            else:
+                # 중복은 스킵이지만 limit 스킵으로 잡진 않음
+                pass
+
+    return added, skipped_over_limit
 
 
-def _reset_all():
-    st.session_state[STATE_ITEMS] = []
-    st.session_state[STATE_SEEN] = set()
+def _calc_total_height(resized_heights: List[int], top_pad: int, bottom_pad: int, gap: int) -> int:
+    if not resized_heights:
+        return 0
+    return top_pad + bottom_pad + sum(resized_heights) + gap * (len(resized_heights) - 1)
+
+
+def _build_outputs(base_name: str, top_pad: int, bottom_pad: int, gap: int):
+    items: List[ImgItem] = st.session_state[STATE_ITEMS]
+
+    uniq: List[ImgItem] = []
+    seen2 = set()
+    for it in items:
+        if it.sha1 in seen2:
+            continue
+        uniq.append(it)
+        seen2.add(it.sha1)
+
+    resized = [_fit_to_width_900(it.pil) for it in uniq]
+    heights = [im.size[1] for im in resized]
+
+    long_img = _compose_long_jpg(resized, top_pad=top_pad, bottom_pad=bottom_pad, gap=gap)
+    jpg_bytes = _save_jpg_bytes(long_img)
+
+    resized_files: List[Tuple[str, bytes]] = []
+    image_filenames: List[str] = []
+    for idx, im in enumerate(resized, start=1):
+        fn = f"img_{idx:02d}.jpg"
+        b = _save_jpg_bytes(im)
+        resized_files.append((fn, b))
+        image_filenames.append(fn)
+
+    jsx = _build_jsx(base_name=base_name, top_pad=top_pad, bottom_pad=bottom_pad, gap=gap, heights=heights, image_files=image_filenames)
+    zip_bytes = _zip_bundle(base_name=base_name, jpg_bytes=jpg_bytes, jsx_text=jsx, resized_jpgs=resized_files)
+
+    meta = {
+        "count": len(resized),
+        "total_height": _calc_total_height(heights, top_pad, bottom_pad, gap),
+        "top": top_pad,
+        "bottom": bottom_pad,
+        "gap": gap,
+    }
+    return jpg_bytes, zip_bytes, meta
 
 
 def main():
@@ -298,70 +347,78 @@ def main():
 
     st.markdown(
         f"""
-        <div style="padding:14px 0 6px 0;">
+        <div style="padding:14px 0 8px 0;">
           <div style="font-size:28px; font-weight:800; letter-spacing:-0.5px;">{APP_TITLE}</div>
           <div style="font-size:13px; opacity:0.7; margin-top:2px;">{APP_SUBTITLE}</div>
+          <div style="font-size:12px; opacity:0.65; margin-top:6px;">업로드 가능 장수: 최대 {MAX_IMAGES}장</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    left, right = st.columns([1.35, 0.65], gap="large")
+    left, right = st.columns([1.25, 0.75], gap="large")
 
     with left:
-        st.subheader("1) 이미지 업로드")
+        st.markdown("### 1) 업로드")
+        cA, cB = st.columns([0.65, 0.35])
+        with cA:
+            uploaded = st.file_uploader(
+                f"JPG/PNG/GIF/WEBP/ZIP 업로드 (최대 {MAX_IMAGES}장까지 목록에 추가)",
+                type=["jpg", "jpeg", "png", "gif", "webp", "zip"],
+                accept_multiple_files=True,
+                label_visibility="collapsed",
+                key="uploader",
+            )
+        with cB:
+            replace_mode = st.checkbox("교체 업로드(기존 초기화)", value=False)
 
-        replace_mode = st.checkbox("업로드 시 기존 목록을 초기화(교체)", value=False)
+        current_count = len(st.session_state[STATE_ITEMS])
+        st.caption(f"현재 목록: {current_count}/{MAX_IMAGES}장")
 
-        uploaded = st.file_uploader(
-            "JPG / PNG / GIF / WEBP / ZIP 업로드 가능 (여러 개 선택 가능)",
-            type=["jpg", "jpeg", "png", "gif", "webp", "zip"],
-            accept_multiple_files=True,
-            label_visibility="collapsed",
-            key="uploader",
+        add_clicked = st.button(
+            "업로드 파일 목록에 추가",
+            type="primary",
+            use_container_width=True,
+            disabled=(not uploaded) or (current_count >= MAX_IMAGES and not replace_mode),
         )
-
-        add_clicked = st.button("업로드 파일 목록에 추가", use_container_width=True, disabled=not uploaded)
 
         if add_clicked and uploaded:
             if replace_mode:
                 _reset_all()
-            added = _add_items_from_uploads(uploaded)
+            added, skipped_limit = _add_items_from_uploads(uploaded)
             if added == 0:
-                st.warning("추가된 새 이미지가 없습니다. (모두 중복으로 판단되어 제외)")
+                st.warning("추가된 새 이미지가 없습니다. (중복 제외 또는 제한 초과)")
             else:
                 st.success(f"추가 완료: 새 이미지 {added}개")
+            if skipped_limit > 0:
+                st.warning(f"최대 {MAX_IMAGES}장 제한으로 {skipped_limit}개 파일(또는 ZIP 내 이미지)이 추가되지 않았습니다.")
 
-        c1, c2, c3 = st.columns([0.45, 0.3, 0.25])
+        st.markdown("### 2) 레이아웃 설정")
+        c1, c2 = st.columns([0.55, 0.45])
         with c1:
-            base_name = st.text_input("파일명(기본)", value="misharp_detailpage", help="생성될 JPG/PSD 파일명(확장자 제외)")
+            base_name_raw = st.text_input("파일명(확장자 제외)", value="misharp_detailpage")
         with c2:
             gap = st.number_input("이미지 간 여백(px)", min_value=0, max_value=2000, value=DEFAULT_GAP, step=10)
-        with c3:
-            st.write("")
-            st.write("")
-            if st.button("전체 삭제(초기화)", use_container_width=True):
-                _reset_all()
-                st.rerun()
 
-        with st.expander("상단/하단 여백 (기본값은 샘플 상세페이지 기준)", expanded=False):
+        base_name = _sanitize_filename(base_name_raw)
+
+        with st.expander("상단/하단 여백(기본값은 샘플 기준)", expanded=False):
             top_pad = st.number_input("상단 여백(px)", min_value=0, max_value=5000, value=DEFAULT_TOP_PAD, step=10)
             bottom_pad = st.number_input("하단 여백(px)", min_value=0, max_value=5000, value=DEFAULT_BOTTOM_PAD, step=10)
 
-        st.divider()
-        st.subheader("2) 순서 변경 / 삭제")
-
+        st.markdown("### 3) 순서 변경 / 삭제")
         items: List[ImgItem] = st.session_state[STATE_ITEMS]
 
         if not items:
             st.info("업로드된 이미지가 없습니다.")
         else:
             for i, it in enumerate(items):
-                row = st.columns([0.18, 0.52, 0.10, 0.10, 0.10])
+                row = st.columns([0.20, 0.50, 0.10, 0.10, 0.10])
                 with row[0]:
-                    st.image(_make_thumb(it.pil), caption="", use_column_width=True)
+                    st.image(_make_thumb(it.pil), use_column_width=True)
                 with row[1]:
-                    st.markdown(f"**{i+1}. {it.name}**  \n원본크기: {it.pil.size[0]}×{it.pil.size[1]}")
+                    short = it.name if len(it.name) <= 40 else (it.name[:37] + "...")
+                    st.markdown(f"**{i+1}. {short}**  \n원본: {it.pil.size[0]}×{it.pil.size[1]}")
                 with row[2]:
                     up = st.button("▲", key=f"up_{i}", disabled=(i == 0), use_container_width=True)
                 with row[3]:
@@ -373,12 +430,10 @@ def main():
                     items[i - 1], items[i] = items[i], items[i - 1]
                     st.session_state[STATE_ITEMS] = items
                     st.rerun()
-
                 if down:
                     items[i + 1], items[i] = items[i], items[i + 1]
                     st.session_state[STATE_ITEMS] = items
                     st.rerun()
-
                 if delete:
                     removed = items.pop(i)
                     st.session_state[STATE_ITEMS] = items
@@ -389,91 +444,66 @@ def main():
                     st.rerun()
 
         st.divider()
-        st.subheader("3) 생성 & 다운로드")
 
-        disabled = (len(st.session_state[STATE_ITEMS]) == 0) or (not base_name.strip())
-        gen = st.button("상세페이지 생성하기", type="primary", use_container_width=True, disabled=disabled)
+        cX, cY = st.columns([0.7, 0.3])
+        with cX:
+            disabled = (len(st.session_state[STATE_ITEMS]) == 0) or (not base_name.strip())
+            gen = st.button("상세페이지 생성하기", type="primary", use_container_width=True, disabled=disabled)
+        with cY:
+            if st.button("전체 초기화", use_container_width=True):
+                _reset_all()
+                st.rerun()
 
         if gen:
-            top_pad_val = int(top_pad) if "top_pad" in locals() else DEFAULT_TOP_PAD
-            bottom_pad_val = int(bottom_pad) if "bottom_pad" in locals() else DEFAULT_BOTTOM_PAD
-            gap_val = int(gap)
+            jpg_bytes, zip_bytes, meta = _build_outputs(base_name=base_name, top_pad=int(top_pad), bottom_pad=int(bottom_pad), gap=int(gap))
+            st.session_state[STATE_LAST_PREVIEW] = jpg_bytes
+            st.session_state[STATE_LAST_ZIP] = zip_bytes
+            st.session_state[STATE_LAST_META] = meta
+            st.success("생성 완료! 오른쪽에서 미리보기/다운로드 하세요.")
 
-            src_items = st.session_state[STATE_ITEMS]
+    with right:
+        st.markdown("### 미리보기")
+        meta = st.session_state[STATE_LAST_META]
+        jpg_bytes = st.session_state[STATE_LAST_PREVIEW]
+        zip_bytes = st.session_state[STATE_LAST_ZIP]
 
-            # 최종 안전장치: 같은 sha1이 들어있으면 1번만 사용
-            uniq: List[ImgItem] = []
-            seen2 = set()
-            for it in src_items:
-                if it.sha1 in seen2:
-                    continue
-                uniq.append(it)
-                seen2.add(it.sha1)
+        if meta and jpg_bytes:
+            st.caption(f"총 {meta['count']}장 · 최종 높이 {meta['total_height']:,}px · 상단 {meta['top']} / 하단 {meta['bottom']} / 간격 {meta['gap']}px")
+            st.image(jpg_bytes, use_column_width=True)
 
-            resized = [_fit_to_width_900(it.pil) for it in uniq]
-            heights = [im.size[1] for im in resized]
-
-            long_img = _compose_long_jpg(resized, top_pad=top_pad_val, bottom_pad=bottom_pad_val, gap=gap_val)
-            jpg_bytes = _save_jpg_bytes(long_img)
-
-            resized_files: List[Tuple[str, bytes]] = []
-            image_filenames: List[str] = []
-            for idx, im in enumerate(resized, start=1):
-                fn = f"img_{idx:02d}.jpg"
-                b = _save_jpg_bytes(im)
-                resized_files.append((fn, b))
-                image_filenames.append(fn)
-
-            jsx = _build_jsx(
-                base_name=base_name.strip(),
-                top_pad=top_pad_val,
-                bottom_pad=bottom_pad_val,
-                gap=gap_val,
-                heights=heights,
-                image_files=image_filenames,
-            )
-
-            zip_bytes = _zip_bundle(
-                base_name=base_name.strip(),
-                jpg_bytes=jpg_bytes,
-                jsx_text=jsx,
-                resized_jpgs=resized_files,
-            )
-
-            st.success("생성 완료! 아래에서 다운로드하세요.")
+            st.markdown("### 다운로드")
             st.download_button(
                 "JPG 다운로드",
                 data=jpg_bytes,
-                file_name=f"{base_name.strip()}.jpg",
+                file_name=f"{base_name}.jpg",
                 mime="image/jpeg",
                 use_container_width=True,
             )
             st.download_button(
-                "JPG + PSD용 JSX + images 폴더 ZIP 다운로드",
+                "ZIP(PSD용 JSX + images 포함) 다운로드",
                 data=zip_bytes,
-                file_name=f"{base_name.strip()}_bundle.zip",
+                file_name=f"{base_name}_bundle.zip",
                 mime="application/zip",
                 use_container_width=True,
             )
+        else:
+            st.info("아직 생성된 결과가 없습니다. 왼쪽에서 생성 버튼을 눌러주세요.")
 
-    with right:
-        st.subheader("사용방법")
-        st.markdown(
-            """
-- **이미지 업로드**: JPG/PNG/GIF/WEBP 또는 ZIP 가능  
-- 업로드 후 **“업로드 파일 목록에 추가”** 버튼을 눌러야 목록에 들어갑니다. (중복 누적 방지)
-- **순서 변경**: 썸네일 옆 ▲▼ 버튼  
-- **여백 조절**: 이미지 간 여백 / 상단·하단 여백  
-- **다운로드**: JPG 또는 ZIP(PSD용 JSX 포함)
+        with st.expander("사용방법", expanded=True):
+            st.markdown(
+                f"""
+**1) 업로드 → ‘업로드 파일 목록에 추가’** (최대 {MAX_IMAGES}장)  
+**2) 순서/여백 확인**  
+**3) ‘상세페이지 생성하기’ → 오른쪽에서 다운로드**
 
 **PSD 만들기(중요)**  
 1) ZIP 압축 해제  
 2) Photoshop 실행(CS 이상 권장)  
 3) `파일 > 스크립트 > 찾아보기...`  
 4) `*_psd_build.jsx` 실행  
-→ Smart Object 레이어가 살아있는 PSD가 생성됩니다.
-            """.strip()
-        )
+→ Smart Object PSD 생성
+                """.strip()
+            )
 
         st.divider()
         st.caption(
