@@ -1,0 +1,2 @@
+libjpeg62-turbo
+zlib1g
