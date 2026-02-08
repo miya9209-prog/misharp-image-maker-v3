@@ -1,6 +1,7 @@
 import io
 import os
 import zipfile
+import hashlib
 from dataclasses import dataclass
 from typing import List, Tuple
 
@@ -19,8 +20,9 @@ DEFAULT_GAP = 300
 
 THUMB_W = 140
 
-# ✅ session_state 안전 키(절대 .items 같은 이름 쓰지 않음)
-STATE_KEY = "img_items"
+# ✅ session_state 안전 키
+STATE_ITEMS = "img_items"
+STATE_SEEN = "seen_hashes"  # 중복 방지용
 
 
 @dataclass
@@ -29,6 +31,11 @@ class ImgItem:
     bytes_data: bytes
     pil: Image.Image
     ext: str
+    sha1: str  # 원본 바이트 기준 해시(중복 방지)
+
+
+def _sha1(data: bytes) -> str:
+    return hashlib.sha1(data).hexdigest()
 
 
 def _is_image_filename(fn: str) -> bool:
@@ -95,6 +102,7 @@ def _extract_zip_images(zip_bytes: bytes) -> List[Tuple[str, bytes]]:
 def _compose_long_jpg(resized_images: List[Image.Image], top_pad: int, bottom_pad: int, gap: int) -> Image.Image:
     if not resized_images:
         raise ValueError("No images")
+
     heights = [im.size[1] for im in resized_images]
     total_h = top_pad + bottom_pad + sum(heights) + gap * (len(resized_images) - 1)
 
@@ -110,18 +118,11 @@ def _compose_long_jpg(resized_images: List[Image.Image], top_pad: int, bottom_pa
 
 def _save_jpg_bytes(im: Image.Image) -> bytes:
     out = io.BytesIO()
-    # optimize는 품질 보정이 아니라 압축 최적화(컬러 보정 아님)
     im.save(out, format="JPEG", quality=95, subsampling=0, optimize=True)
     return out.getvalue()
 
 
 def _build_jsx(base_name: str, top_pad: int, bottom_pad: int, gap: int, heights: List[int], image_files: List[str]) -> str:
-    """
-    Photoshop ExtendScript(JSX):
-    - jsx 기준 ./images/ 폴더의 img_01.jpg... 를 Smart Object로 place
-    - 새 문서(900 x totalHeight) 만들고, y 좌표에 맞춰 배치
-    - PSD 저장
-    """
     y_positions = []
     y = top_pad
     for h in heights:
@@ -220,28 +221,58 @@ def _zip_bundle(base_name: str, jpg_bytes: bytes, jsx_text: str, resized_jpgs: L
 
 
 def _init_state():
-    if STATE_KEY not in st.session_state:
-        st.session_state[STATE_KEY] = []
+    if STATE_ITEMS not in st.session_state:
+        st.session_state[STATE_ITEMS] = []
+    if STATE_SEEN not in st.session_state:
+        st.session_state[STATE_SEEN] = set()
 
 
-def _add_items_from_uploads(uploaded_files):
-    new_items: List[ImgItem] = []
+def _add_one_image(name: str, raw: bytes):
+    """
+    ✅ 핵심: raw 바이트 sha1으로 중복 방지
+    - Streamlit rerun이 몇 번 나도 같은 파일은 1번만 들어감
+    """
+    h = _sha1(raw)
+    seen = st.session_state[STATE_SEEN]
+    if h in seen:
+        return False  # 중복이라 스킵
+
+    im = _open_image_any(raw)
+    ext = os.path.splitext(name)[1].lower().lstrip(".") or "jpg"
+
+    st.session_state[STATE_ITEMS].append(ImgItem(name=name, bytes_data=raw, pil=im, ext=ext, sha1=h))
+    seen.add(h)
+    st.session_state[STATE_SEEN] = seen
+    return True
+
+
+def _add_items_from_uploads(uploaded_files) -> int:
+    """
+    업로드 파일들(이미지/zip)을 읽어서 목록에 추가.
+    중복은 sha1로 자동 차단.
+    """
+    added_count = 0
+
     for uf in uploaded_files:
-        raw = uf.read()
+        # ✅ uf.read()는 rerun에서 꼬일 수 있으니 getvalue() 사용
+        raw = uf.getvalue()
         name = uf.name
 
         if name.lower().endswith(".zip"):
             extracted = _extract_zip_images(raw)
             for iname, ibytes in extracted:
-                im = _open_image_any(ibytes)
-                ext = os.path.splitext(iname)[1].lower().lstrip(".") or "jpg"
-                new_items.append(ImgItem(name=iname, bytes_data=ibytes, pil=im, ext=ext))
+                if _add_one_image(iname, ibytes):
+                    added_count += 1
         else:
-            im = _open_image_any(raw)
-            ext = os.path.splitext(name)[1].lower().lstrip(".") or "jpg"
-            new_items.append(ImgItem(name=name, bytes_data=raw, pil=im, ext=ext))
+            if _add_one_image(name, raw):
+                added_count += 1
 
-    st.session_state[STATE_KEY].extend(new_items)
+    return added_count
+
+
+def _reset_all():
+    st.session_state[STATE_ITEMS] = []
+    st.session_state[STATE_SEEN] = set()
 
 
 def main():
@@ -263,16 +294,27 @@ def main():
     with left:
         st.subheader("1) 이미지 업로드")
 
+        replace_mode = st.checkbox("업로드 시 기존 목록을 초기화(교체)", value=False)
+
         uploaded = st.file_uploader(
             "JPG / PNG / GIF / WEBP / ZIP 업로드 가능 (여러 개 선택 가능)",
             type=["jpg", "jpeg", "png", "gif", "webp", "zip"],
             accept_multiple_files=True,
             label_visibility="collapsed",
+            key="uploader",
         )
 
-        if uploaded:
-            _add_items_from_uploads(uploaded)
-            st.success(f"추가됨: 업로드 항목 {len(uploaded)}개 처리 완료")
+        # ✅ 업로드를 즉시 누적하지 않고, 버튼으로 “한 번만 추가”
+        add_clicked = st.button("업로드 파일 목록에 추가", use_container_width=True, disabled=not uploaded)
+
+        if add_clicked and uploaded:
+            if replace_mode:
+                _reset_all()
+            added = _add_items_from_uploads(uploaded)
+            if added == 0:
+                st.warning("추가된 새 이미지가 없습니다. (모두 중복으로 판단되어 제외)")
+            else:
+                st.success(f"추가 완료: 새 이미지 {added}개")
 
         c1, c2, c3 = st.columns([0.45, 0.3, 0.25])
         with c1:
@@ -283,7 +325,7 @@ def main():
             st.write("")
             st.write("")
             if st.button("전체 삭제(초기화)", use_container_width=True):
-                st.session_state[STATE_KEY] = []
+                _reset_all()
                 st.rerun()
 
         with st.expander("상단/하단 여백 (기본값은 샘플 상세페이지 기준)", expanded=False):
@@ -293,12 +335,11 @@ def main():
         st.divider()
         st.subheader("2) 순서 변경 / 삭제")
 
-        items: List[ImgItem] = st.session_state[STATE_KEY]
+        items: List[ImgItem] = st.session_state[STATE_ITEMS]
 
         if not items:
             st.info("업로드된 이미지가 없습니다.")
         else:
-            # enumerate(list(items)) 형태는 불필요하며, 그대로 enumerate(items) 사용
             for i, it in enumerate(items):
                 row = st.columns([0.18, 0.52, 0.10, 0.10, 0.10])
                 with row[0]:
@@ -314,23 +355,28 @@ def main():
 
                 if up:
                     items[i - 1], items[i] = items[i], items[i - 1]
-                    st.session_state[STATE_KEY] = items
+                    st.session_state[STATE_ITEMS] = items
                     st.rerun()
 
                 if down:
                     items[i + 1], items[i] = items[i], items[i + 1]
-                    st.session_state[STATE_KEY] = items
+                    st.session_state[STATE_ITEMS] = items
                     st.rerun()
 
                 if delete:
-                    items.pop(i)
-                    st.session_state[STATE_KEY] = items
+                    removed = items.pop(i)
+                    st.session_state[STATE_ITEMS] = items
+                    # ✅ 삭제한 항목의 해시도 seen에서 제거(재업로드 가능)
+                    seen = st.session_state[STATE_SEEN]
+                    if removed.sha1 in seen:
+                        seen.remove(removed.sha1)
+                    st.session_state[STATE_SEEN] = seen
                     st.rerun()
 
         st.divider()
         st.subheader("3) 생성 & 다운로드")
 
-        disabled = (len(st.session_state[STATE_KEY]) == 0) or (not base_name.strip())
+        disabled = (len(st.session_state[STATE_ITEMS]) == 0) or (not base_name.strip())
         gen = st.button("상세페이지 생성하기", type="primary", use_container_width=True, disabled=disabled)
 
         if gen:
@@ -338,14 +384,23 @@ def main():
             bottom_pad_val = int(bottom_pad) if "bottom_pad" in locals() else DEFAULT_BOTTOM_PAD
             gap_val = int(gap)
 
-            src_items = st.session_state[STATE_KEY]
-            resized = [_fit_to_width_900(it.pil) for it in src_items]
+            src_items = st.session_state[STATE_ITEMS]
+
+            # ✅ 최종 안전장치: 혹시라도 들어온 중복(같은 sha1)이 있으면 생성 시 1번만 사용
+            uniq = []
+            seen2 = set()
+            for it in src_items:
+                if it.sha1 in seen2:
+                    continue
+                uniq.append(it)
+                seen2.add(it.sha1)
+
+            resized = [_fit_to_width_900(it.pil) for it in uniq]
             heights = [im.size[1] for im in resized]
 
             long_img = _compose_long_jpg(resized, top_pad=top_pad_val, bottom_pad=bottom_pad_val, gap=gap_val)
             jpg_bytes = _save_jpg_bytes(long_img)
 
-            # PSD용 이미지는 img_01.jpg ... 로 고정(Place 안정성)
             resized_files: List[Tuple[str, bytes]] = []
             image_filenames: List[str] = []
             for idx, im in enumerate(resized, start=1):
@@ -391,6 +446,7 @@ def main():
         st.markdown(
             """
 - **이미지 업로드**: JPG/PNG/GIF/WEBP 또는 ZIP 가능  
+- 업로드 후 **“업로드 파일 목록에 추가”** 버튼을 눌러야 목록에 들어갑니다. (중복 누적 방지)
 - **순서 변경**: 썸네일 옆 ▲▼ 버튼  
 - **여백 조절**: 이미지 간 여백 / 상단·하단 여백  
 - **다운로드**: JPG 또는 ZIP(PSD용 JSX 포함)
