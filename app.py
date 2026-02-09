@@ -170,7 +170,7 @@ section[data-testid="stSidebar"] {{ display: none; }}
 html, body, [class*="css"] {
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
 }
-.block-container { padding-top: 1.1rem; padding-bottom: 2.1rem; }
+.block-container { padding-top: 2.6rem; padding-bottom: 2.1rem; }
 
 /* Sidebar width thinner */
 section[data-testid="stSidebar"] { width: 220px !important; }
