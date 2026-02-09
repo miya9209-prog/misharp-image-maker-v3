@@ -1,3 +1,4 @@
+# DEPLOY CHECK: 2026-02-09 login-gate
 import io
 import os
 import re
