@@ -3,7 +3,6 @@ import os
 import re
 import zipfile
 import hashlib
-import base64
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, Optional
 
@@ -21,7 +20,7 @@ except Exception:
 # APP CONFIG
 # =========================================================
 APP_TITLE = "MISHARP 상세페이지 생성기"
-APP_SUBTITLE = "PSD GENERATOR V3 · 내부 디자이너 전용"
+APP_SUBTITLE = "PSD GENERATOR v3 · 내부 디자이너 전용"
 
 CANVAS_WIDTH = 900
 
@@ -51,46 +50,11 @@ STATE_AUTH_LOCK_UNTIL = "auth_lock_until"
 
 
 # =========================================================
-# BRAND (logo & colors)
+# BRAND (logo.png)
 # =========================================================
-# 미샵 로고 배경색(이미지에서 샘플링): #4d6f4e
-BRAND_BG = "#4d6f4e"
+BRAND_BG = "#4d6f4e"      # 로고 배경과 동일 톤
 BRAND_BG_DARK = "#3f5d40"
-
-# 로고를 app.py 안에 내장 (추가 파일 없이 배포 가능)
-# (사용자가 올려준 로고 jpg를 base64로 넣어둠)
-MISHARP_LOGO_B64 = (
-    "/9j/4RdtRXhpZgAATU0AKgAAAAgABwESAAMAAAABAAEAAAEaAAUAAAABAAAAYgEbAAUAAAABAAAA"
-    "agEoAAMAAAABAAIAAAExAAIAAAAeAAAAcgEyAAIAAAAUAAAAkIdpAAQAAAABAAAApAAAANAACvyA"
-    "AAAnEAAK/IAAACcQQWRvYmUgUGhvdG9zaG9wIENTNS4xIFdpbgA4QklNBAQAAAAAABccQklNBCUA"
-    "AAAAABAcQklNBDoAAAAAAEgcQklNBEwAAAAAAE4cQklNBFEAAAAAAFUcQklNBFoAAAAAAGAcQklN"
-    "BF8AAAAAAGYcQklNBGQAAAAAAGwcQklNBGkAAAAAAHMcQklNBG4AAAAAAH0cQklNBG8AAAAAAIcc"
-    "QklNBG8AAAAAAIgcQklNBG8AAAAAAIkcQklNBG8AAAAAAIocQklNBG8AAAAAAIscQklNBG8AAAAA"
-    "AIwcQklNBG8AAAAAAI0cQklNBG8AAAAAAI4cQklNBG8AAAAAAI8cQklNBG8AAAAAAJAcQklNBG8A"
-    "AAAAAJEcQklNBG8AAAAAAJIcQklNBG8AAAAAAJMcQklNBG8AAAAAAJQcQklNBG8AAAAAAJUcQklN"
-    "BG8AAAAAAJYcQklNBG8AAAAAAJccQklNBG8AAAAAAJgcQklNBG8AAAAAAJkcQklNBG8AAAAAAJoc"
-    "QklNBG8AAAAAAJscQklNBG8AAAAAAJwcQklNBG8AAAAAAJ0cQklNBG8AAAAAAJ4cQklNBG8AAAAA"
-    "AJ8cQklNBG8AAAAAAKAcQklNBG8AAAAAAKEcQklNBG8AAAAAAKIcQklNBG8AAAAAAKMcQklNBG8A"
-    "AAAAAKQcQklNBG8AAAAAAKUcQklNBG8AAAAAAKYcQklNBG8AAAAAAKccQklNBG8AAAAAAKgcQklN"
-    "BG8AAAAAAKkcQklNBG8AAAAAAKocQklNBG8AAAAAAKscQklNBG8AAAAAAKwcQklNBG8AAAAAAK0c"
-    "QklNBG8AAAAAAK4cQklNBG8AAAAAAK8cQklNBG8AAAAAALAcQklNBG8AAAAAALH/2wCEAAkGBxAQ"
-    "EBAQEBAVEBAVEBAVEBAVFRUVFRUWFhUVFRUYHSggGBolGxUVITEhJSkrLi4uFx8zODMtNygtLisBCgoK"
-    "DQ0NDg0NDysZFRkrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrK//A"
-    "ABEIAOEA4QMBIgACEQEDEQH/xAAcAAACAwEBAQEAAAAAAAAAAAAEBQIDBgcBAAj/xABCEAACAQMCAw"
-    "QIBQcEAgMBAAABAgMABBESITEFBhMiQVFhBxQycYGRI0JSscEVQmKx0SMzQ1NicoLh8TQ0Q4PSFqPC"
-    "0uP/xAAaAQACAwEBAAAAAAAAAAAAAAACAwEEBQAG/8QALREAAgIBAwMCBgIDAAAAAAAAAAECEQMSIT"
-    "EEE0FRImFxkQUTgaGx8BRCQv/aAAwDAQACEQMRAD8A+qgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//Z"
-)
+LOGO_PATH = "logo.png"
 
 
 # =========================================================
@@ -98,60 +62,70 @@ MISHARP_LOGO_B64 = (
 # =========================================================
 def inject_style(auth_ok: bool):
     """
-    - 로그인 전: 배경 브랜드그린 + 로고 카드 + 심플
-    - 로그인 후: 화이트 기반, 폰트/버튼/간격을 디자이너용으로 정리
-    - 사이드바 폭: 더 얇게
+    - 로그인 전: 브랜드 그린 배경 + 심플 카드 + 로고
+    - 로그인 후: 폰트/간격/버튼 정리 + 사이드바 폭 얇게
     """
     if not auth_ok:
         st.markdown(
             f"""
 <style>
 html, body, [class*="css"] {{
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR",
+               Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
 }}
 /* 전체 배경 */
 .stApp {{
   background: {BRAND_BG};
 }}
-/* 상단 패딩 줄이기 */
+/* 상단 여백(로그인 카드 세로 높이 줄이기: 너무 내려가지 않게) */
 .block-container {{
   padding-top: 0.8rem;
-  padding-bottom: 1.8rem;
+  padding-bottom: 1.4rem;
 }}
-/* 로그인 카드 */
+/* 로그인 카드 (세로 높이 줄인 버전) */
 .ms-login {{
-  max-width: 460px;
-  margin: 7vh auto 0 auto;
-  padding: 22px 22px 18px 22px;
+  max-width: 440px;
+  margin: 6vh auto 0 auto;          /* 상단 공간 줄임 */
+  padding: 18px 18px 16px 18px;     /* 내부 패딩 줄임 */
   border-radius: 18px;
   background: rgba(255,255,255,0.10);
   border: 1px solid rgba(255,255,255,0.18);
   box-shadow: 0 10px 26px rgba(0,0,0,0.14);
   backdrop-filter: blur(6px);
 }}
-.ms-login h1 {{
+.ms-login .ms-sub {{
   margin: 8px 0 0 0;
-  font-size: 18px;
-  font-weight: 800;
-  letter-spacing: -0.4px;
+  font-size: 12.5px;
+  letter-spacing: 0.25px;
+  color: rgba(255,255,255,0.78);
+  text-align: center;
+}}
+.ms-login h1 {{
+  margin: 6px 0 0 0;
+  font-size: 16px;
+  font-weight: 850;
+  letter-spacing: -0.3px;
   color: rgba(255,255,255,0.94);
+  text-align: center;
 }}
 .ms-login p {{
-  margin: 6px 0 14px 0;
+  margin: 6px 0 0 0;
   font-size: 12.5px;
   color: rgba(255,255,255,0.72);
+  text-align: center;
 }}
-/* 입력 영역 */
+/* 입력 영역: 카드와 붙이기 */
 .ms-login-input {{
-  max-width: 460px;
-  margin: 12px auto 0 auto;
+  max-width: 440px;
+  margin: 10px auto 0 auto;
 }}
 /* 버튼 */
 .stButton button {{
   border-radius: 12px !important;
-  padding: 0.60rem 0.95rem !important;
-  font-weight: 700 !important;
+  padding: 0.58rem 0.95rem !important;
+  font-weight: 750 !important;
   letter-spacing: -0.2px !important;
+  white-space: nowrap !important;
 }}
 /* 캡션 */
 [data-testid="stCaptionContainer"] {{
@@ -168,8 +142,11 @@ section[data-testid="stSidebar"] {{ display: none; }}
             """
 <style>
 html, body, [class*="css"] {
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR",
+               Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
 }
+
+/* ✅ 타이틀 잘림 방지: 상단 여백 넉넉히 */
 .block-container { padding-top: 2.6rem; padding-bottom: 2.1rem; }
 
 /* Sidebar width thinner */
@@ -190,7 +167,7 @@ section[data-testid="stSidebar"] .stMarkdown h3 { font-size: 14px; letter-spacin
 
 /* Section label */
 .ms-section {
-  margin-top: 22px;
+  margin-top: 22px;   /* 단계 간 여백 */
   margin-bottom: 14px;
 }
 .ms-section .t {
@@ -204,8 +181,9 @@ section[data-testid="stSidebar"] .stMarkdown h3 { font-size: 14px; letter-spacin
 .stButton button, .stDownloadButton button {
   border-radius: 12px !important;
   padding: 0.56rem 0.9rem !important;
-  font-weight: 700 !important;
+  font-weight: 750 !important;
   letter-spacing: -0.2px !important;
+  white-space: nowrap !important;   /* ✅ '삭제' 세로 줄바꿈 방지 */
 }
 
 /* Softer divider */
@@ -221,8 +199,8 @@ hr { opacity: 0.18; }
 .ms-pill {
   padding:6px 9px;
   border-radius: 999px;
-  border: 1px solid rgba(0,0,0,0.10);
-  background: rgba(0,0,0,0.02);
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.06);
   font-size: 12px;
   white-space: nowrap;
   max-width: 160px;
@@ -232,7 +210,7 @@ hr { opacity: 0.18; }
 .ms-pill-etc { opacity: 0.65; }
 
 /* tighten caption */
-[data-testid="stCaptionContainer"] { opacity: 0.78; }
+[data-testid="stCaptionContainer"] { opacity: 0.80; }
 </style>
             """,
             unsafe_allow_html=True,
@@ -252,8 +230,8 @@ def ms_section(title: str):
 
 def render_uploaded_list_row(uploaded_files, max_show: int = 10):
     """
-    Streamlit file_uploader 기본 UI는 3개만 보여서 <>가 생김(커스텀 불가).
-    그래서 업로드 아래에 '한 줄 파일 리스트(최대 10개)'를 따로 만들어 직관적으로 보이게 함.
+    Streamlit file_uploader 기본 UI(3개+<> 네비)는 커스텀 불가.
+    그래서 업로드 아래에 '한 줄 파일 리스트(최대 10개)'를 따로 표시.
     """
     if not uploaded_files:
         return
@@ -436,47 +414,42 @@ def require_login():
     if st.session_state.get(STATE_AUTH_OK) is True:
         return
 
-    rem = _lock_remaining_seconds()
-
     # 로그인 전 스타일
     inject_style(auth_ok=False)
+
+    rem = _lock_remaining_seconds()
 
     # 잠금 화면
     if rem > 0:
         mm = rem // 60
         ss = rem % 60
-        logo_uri = f"data:image/jpeg;base64,{MISHARP_LOGO_B64}"
-        st.markdown(
-            f"""
-<div class="ms-login">
-  <img src="{logo_uri}" style="width:160px;display:block;margin:0 auto 10px auto;border-radius:12px;" />
-  <h1 style="text-align:center;">잠금 상태</h1>
-  <p style="text-align:center;">로그인 시도 횟수 초과로 잠시 잠겼어요.</p>
-  <div style="text-align:center;font-size:16px;font-weight:800;color:rgba(255,255,255,0.95);">
-    남은 시간: {mm}분 {ss}초
-  </div>
-  <p style="text-align:center;margin-top:10px;">조금만 기다렸다가 다시 시도해 주세요.</p>
-</div>
-            """,
-            unsafe_allow_html=True,
-        )
+
+        st.markdown('<div class="ms-login">', unsafe_allow_html=True)
+        if os.path.exists(LOGO_PATH):
+            st.image(LOGO_PATH, width=170)
+        st.markdown(f'<div class="ms-sub">PSD GENERATOR v3</div>', unsafe_allow_html=True)
+        st.markdown('<h1>잠금 상태</h1>', unsafe_allow_html=True)
+        st.markdown(f'<p>남은 시간: <b>{mm}분 {ss}초</b></p>', unsafe_allow_html=True)
+        st.markdown('<p>조금만 기다렸다가 다시 시도해 주세요.</p>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
         st.stop()
 
     # 잠금 시간이 지났으면 해제
     st.session_state[STATE_AUTH_LOCK_UNTIL] = None
 
-    logo_uri = f"data:image/jpeg;base64,{MISHARP_LOGO_B64}"
-    st.markdown(
-        f"""
-<div class="ms-login">
-  <img src="{logo_uri}" style="width:170px;display:block;margin:0 auto 10px auto;border-radius:12px;" />
-  <h1 style="text-align:center;">내부 전용 로그인</h1>
-  <p style="text-align:center;">접속 코드를 입력하면 바로 시작돼요.</p>
-</div>
-        """,
-        unsafe_allow_html=True,
-    )
+    # 로그인 카드
+    st.markdown('<div class="ms-login">', unsafe_allow_html=True)
+    if os.path.exists(LOGO_PATH):
+        st.image(LOGO_PATH, width=180)
+    else:
+        st.markdown("<p>(logo.png 파일을 app.py와 같은 폴더에 넣어주세요)</p>", unsafe_allow_html=True)
 
+    st.markdown(f'<div class="ms-sub">PSD GENERATOR v3</div>', unsafe_allow_html=True)
+    st.markdown('<h1>내부 전용 로그인</h1>', unsafe_allow_html=True)
+    st.markdown('<p>접속 코드를 입력하면 바로 시작돼요.</p>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # 입력 영역
     st.markdown('<div class="ms-login-input">', unsafe_allow_html=True)
     code = st.text_input(
         "접속 코드",
@@ -914,7 +887,7 @@ def _build_outputs(base_name: str, top_pad: int, bottom_pad: int, gap: int):
 def main():
     st.set_page_config(page_title=APP_TITLE, layout="wide")
 
-    # 로그인 (로그인 전 스타일은 require_login 내부에서 주입)
+    # 로그인
     require_login()
 
     # 로그인 후 스타일
@@ -923,10 +896,10 @@ def main():
     sidebar_auth_box()
     _init_state()
 
-    # Top title
+    # Top title (약간 더 아래로)
     st.markdown(
         f"""
-<div style="padding:6px 0 2px 0;">
+<div style="padding:12px 0 2px 0;">
   <div class="ms-top-title">{APP_TITLE}</div>
   <div class="ms-top-sub">{APP_SUBTITLE}</div>
 </div>
@@ -951,7 +924,6 @@ def main():
         with cB:
             replace_mode = st.checkbox("기존 목록 비우고 새로 담기", value=False)
 
-        # ✅ 업로드 파일을 한 줄로(최대 10개) 보여주는 영역 (요청사항)
         if uploaded:
             st.caption("업로드 선택 파일(최대 10개 표시)")
             render_uploaded_list_row(uploaded, max_show=10)
@@ -1002,7 +974,8 @@ def main():
             st.info("업로드된 이미지가 없습니다.")
         else:
             for i, it in enumerate(items):
-                row = st.columns([0.14, 0.56, 0.10, 0.10, 0.10])
+                # ✅ 마지막 칸(삭제) 폭 약간 키움 → '삭제' 세로 줄바꿈 방지
+                row = st.columns([0.14, 0.54, 0.10, 0.10, 0.12])
                 with row[0]:
                     st.image(_make_thumb(it.pil), use_column_width=True)
                 with row[1]:
