@@ -1,29 +1,32 @@
-# DEPLOY CHECK: 2026-02-09 login-gate
 import io
 import os
 import re
 import zipfile
 import hashlib
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Optional
 
 import streamlit as st
 from PIL import Image, ImageSequence
 
+
+# =========================================================
+# APP CONFIG
+# =========================================================
 APP_TITLE = "MISHARP 상세페이지 생성기"
 APP_SUBTITLE = "MISHARP PSD GENERATOR V3"
 
 CANVAS_WIDTH = 900
 
-# ✅ 분할 규칙
-MAX_PER_PSD = 10          # PSD 1개당 최대 10장
-MAX_TOTAL_IMAGES = 20     # 전체 최대 20장(10장 초과 시 PSD 2개로 분할)
+# ✅ 분할 규칙 (현재 운영 방식 유지: 10장 초과 시 PSD 2개로 분할, 최대 20장)
+MAX_PER_PSD = 10
+MAX_TOTAL_IMAGES = 20
 
 DEFAULT_TOP_PAD = 180
 DEFAULT_BOTTOM_PAD = 250
 DEFAULT_GAP = 300
 
-# ✅ 썸네일 크기 절반
+# ✅ 썸네일 (현재 안정버전 기준: 70)
 THUMB_W = 70
 
 STATE_ITEMS = "img_items"
@@ -31,8 +34,141 @@ STATE_SEEN = "seen_hashes"
 STATE_LAST_PREVIEW = "last_preview_jpg"
 STATE_LAST_ZIP = "last_bundle_zip"
 STATE_LAST_META = "last_meta"
+STATE_AUTH_OK = "auth_ok"
+STATE_AUTH_LABEL = "auth_label"
 
 
+# =========================================================
+# AUTH (ACCESS CODE GATE)
+# =========================================================
+def _truthy(v) -> bool:
+    """
+    Streamlit Secrets에서 AUTH_ENABLED가
+    - true/false(bool)
+    - "true"/"false"(string)
+    - 1/0 등으로 들어와도 안전 처리
+    """
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return False
+    s = str(v).strip().lower()
+    return s in ("1", "true", "yes", "y", "on")
+
+
+def _sha256(s: str) -> str:
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+
+def _load_auth_secrets() -> Tuple[bool, Dict[str, str], set]:
+    """
+    Secrets 예시:
+    AUTH_ENABLED = true
+    ACCESS_CODE_HASHES = ["code01:abcd...", ...]
+    REVOKED_LABELS = ["code02", ...]
+    """
+    try:
+        enabled = _truthy(st.secrets.get("AUTH_ENABLED", False))
+        hashes = st.secrets.get("ACCESS_CODE_HASHES", [])
+        revoked = st.secrets.get("REVOKED_LABELS", [])
+    except Exception:
+        enabled, hashes, revoked = False, [], []
+
+    auth_map: Dict[str, str] = {}
+    if isinstance(hashes, (list, tuple)):
+        for x in hashes:
+            if not isinstance(x, str) or ":" not in x:
+                continue
+            label, h = x.split(":", 1)
+            label = label.strip()
+            h = h.strip()
+            if label and h:
+                auth_map[label] = h
+
+    revoked_set = set()
+    if isinstance(revoked, (list, tuple)):
+        revoked_set = set([str(x).strip() for x in revoked if str(x).strip()])
+
+    return enabled, auth_map, revoked_set
+
+
+def require_login():
+    """
+    - AUTH_ENABLED=true면 로그인 화면 강제
+    - 성공 시 session_state에 auth_ok/auth_label 저장
+    """
+    enabled, auth_map, revoked_set = _load_auth_secrets()
+
+    # 로그인 OFF면 통과
+    if not enabled:
+        st.session_state[STATE_AUTH_OK] = True
+        st.session_state[STATE_AUTH_LABEL] = "AUTH_OFF"
+        return
+
+    # 이미 로그인 OK면 통과
+    if st.session_state.get(STATE_AUTH_OK) is True:
+        return
+
+    # 로그인 화면
+    st.markdown("## 🔒 접속 코드 입력")
+    st.caption("미샵 내부 직원 전용입니다. 관리자에게 발급받은 코드를 입력하세요.")
+
+    code = st.text_input(
+        "접속 코드",
+        type="password",
+        placeholder="MSPGV3-9F2K-7XQ3-ABCD",
+    )
+
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        login_clicked = st.button("로그인", type="primary", use_container_width=True)
+    with c2:
+        st.button("입력 초기화", use_container_width=True, on_click=lambda: st.session_state.pop("tmp_code", None))
+
+    if not login_clicked:
+        st.stop()
+
+    raw = (code or "").strip().upper()
+    raw = re.sub(r"\s+", "", raw)
+    if not raw:
+        st.error("코드를 입력해 주세요.")
+        st.stop()
+
+    entered_hash = _sha256(raw)
+
+    matched_label: Optional[str] = None
+    for label, saved_hash in auth_map.items():
+        if entered_hash == saved_hash:
+            matched_label = label
+            break
+
+    if matched_label is None:
+        st.error("코드가 올바르지 않습니다.")
+        st.stop()
+
+    if matched_label in revoked_set:
+        st.error("해당 코드는 차단되었습니다. 관리자에게 문의하세요.")
+        st.stop()
+
+    st.session_state[STATE_AUTH_OK] = True
+    st.session_state[STATE_AUTH_LABEL] = matched_label
+    st.success("로그인 성공! 프로그램으로 이동합니다.")
+    st.rerun()
+
+
+def sidebar_auth_box():
+    with st.sidebar:
+        st.markdown("### 접근 상태")
+        st.caption(f"label: **{st.session_state.get(STATE_AUTH_LABEL, '-') }**")
+        if st.button("로그아웃", use_container_width=True):
+            st.session_state.pop(STATE_AUTH_OK, None)
+            st.session_state.pop(STATE_AUTH_LABEL, None)
+            st.rerun()
+
+
+# =========================================================
+# IMAGE UTIL
+# =========================================================
 @dataclass
 class ImgItem:
     name: str
@@ -47,7 +183,7 @@ def _sha1(data: bytes) -> str:
 
 
 def _sanitize_filename(name: str) -> str:
-    name = name.strip()
+    name = (name or "").strip()
     if not name:
         return "misharp_detailpage"
     name = re.sub(r"\s+", "_", name)
@@ -122,8 +258,21 @@ def _save_jpg_bytes(im: Image.Image) -> bytes:
     return out.getvalue()
 
 
-def _build_jsx(base_name: str, canvas_h: int, top_pad: int, gap: int, heights: List[int], image_files: List[str], images_folder_name: str) -> str:
-    # y positions
+def _calc_total_height(resized_heights: List[int], top_pad: int, bottom_pad: int, gap: int) -> int:
+    if not resized_heights:
+        return 0
+    return top_pad + bottom_pad + sum(resized_heights) + gap * (len(resized_heights) - 1)
+
+
+def _build_jsx(
+    base_name: str,
+    canvas_h: int,
+    top_pad: int,
+    gap: int,
+    heights: List[int],
+    image_files: List[str],
+    images_folder_name: str,
+) -> str:
     y_positions = []
     y = top_pad
     for h in heights:
@@ -201,27 +350,19 @@ def _build_jsx(base_name: str, canvas_h: int, top_pad: int, gap: int, heights: L
     return "\n".join(lines)
 
 
-def _build_readme(max_per_psd: int, max_total: int) -> str:
+def _build_readme() -> str:
     return (
-        "MISHARP 상세페이지 생성기 (내부용)\n"
-        "\n"
+        "MISHARP 상세페이지 생성기 (내부용)\n\n"
         "[규칙]\n"
-        f"- JPG: 전체 이미지 1장으로 생성\n"
-        f"- PSD: {max_per_psd}장 초과 시 자동 2개로 분할\n"
-        f"- 최대 등록: {max_total}장\n"
-        "\n"
-        "[다운로드 ZIP 구성]\n"
-        "1) 상세페이지 JPG\n"
-        "2) PSD 생성용 JSX (Smart Object 유지)\n"
-        "3) images_part1/ , images_part2/ 폴더(PSD에 들어갈 900px 리사이즈 이미지)\n"
-        "\n"
+        "- JPG: 전체 이미지 1장으로 생성\n"
+        f"- PSD: {MAX_PER_PSD}장 초과 시 자동 2개로 분할\n"
+        f"- 최대 등록: {MAX_TOTAL_IMAGES}장\n\n"
         "[PSD 생성 방법]\n"
         "1) ZIP 압축 해제\n"
         "2) Photoshop 실행(CS 이상 권장)\n"
         "3) 파일 > 스크립트 > 찾아보기...\n"
         "4) *_psd_build.jsx 실행\n"
-        "5) 같은 폴더에 .psd 생성\n"
-        "\n"
+        "5) 같은 폴더에 .psd 생성\n\n"
         "ⓒ misharpcompany. All rights reserved.\n"
     )
 
@@ -235,29 +376,21 @@ def _zip_bundle(
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(f"{base_name}.jpg", jpg_bytes)
-        zf.writestr("README.txt", _build_readme(MAX_PER_PSD, MAX_TOTAL_IMAGES))
-
+        zf.writestr("README.txt", _build_readme())
         for jsx_name, jsx_text in jsx_entries:
             zf.writestr(jsx_name, jsx_text)
-
         for folder_name, files in resized_groups:
             for fn, b in files:
                 zf.writestr(f"{folder_name}/{fn}", b)
-
     return out.getvalue()
 
 
 def _init_state():
-    if STATE_ITEMS not in st.session_state:
-        st.session_state[STATE_ITEMS] = []
-    if STATE_SEEN not in st.session_state:
-        st.session_state[STATE_SEEN] = set()
-    if STATE_LAST_PREVIEW not in st.session_state:
-        st.session_state[STATE_LAST_PREVIEW] = None
-    if STATE_LAST_ZIP not in st.session_state:
-        st.session_state[STATE_LAST_ZIP] = None
-    if STATE_LAST_META not in st.session_state:
-        st.session_state[STATE_LAST_META] = None
+    st.session_state.setdefault(STATE_ITEMS, [])
+    st.session_state.setdefault(STATE_SEEN, set())
+    st.session_state.setdefault(STATE_LAST_PREVIEW, None)
+    st.session_state.setdefault(STATE_LAST_ZIP, None)
+    st.session_state.setdefault(STATE_LAST_META, None)
 
 
 def _reset_all():
@@ -282,9 +415,6 @@ def _add_one_image(name: str, raw: bytes) -> bool:
 
 
 def _add_items_from_uploads(uploaded_files) -> Tuple[int, int]:
-    """
-    returns: (added_count, skipped_over_limit_count)
-    """
     added = 0
     skipped_over_limit = 0
 
@@ -313,16 +443,10 @@ def _add_items_from_uploads(uploaded_files) -> Tuple[int, int]:
     return added, skipped_over_limit
 
 
-def _calc_total_height(resized_heights: List[int], top_pad: int, bottom_pad: int, gap: int) -> int:
-    if not resized_heights:
-        return 0
-    return top_pad + bottom_pad + sum(resized_heights) + gap * (len(resized_heights) - 1)
-
-
 def _build_outputs(base_name: str, top_pad: int, bottom_pad: int, gap: int):
     items: List[ImgItem] = st.session_state[STATE_ITEMS]
 
-    # safety: unique by sha1 (just in case)
+    # unique by sha1 (중복 방지)
     uniq: List[ImgItem] = []
     seen2 = set()
     for it in items:
@@ -334,12 +458,11 @@ def _build_outputs(base_name: str, top_pad: int, bottom_pad: int, gap: int):
     resized_all = [_fit_to_width_900(it.pil) for it in uniq]
     heights_all = [im.size[1] for im in resized_all]
 
-    # 1) JPG: 전체 1장
+    # JPG 전체 1장
     long_img = _compose_long_jpg(resized_all, top_pad=top_pad, bottom_pad=bottom_pad, gap=gap)
     jpg_bytes = _save_jpg_bytes(long_img)
 
-    # 2) PSD: 10장 초과면 2개로 분할
-    parts: List[List[Image.Image]] = []
+    # PSD 분할 (10장 초과 시 2개)
     if len(resized_all) <= MAX_PER_PSD:
         parts = [resized_all]
     else:
@@ -352,21 +475,19 @@ def _build_outputs(base_name: str, top_pad: int, bottom_pad: int, gap: int):
         part_heights = [im.size[1] for im in part_imgs]
         part_canvas_h = _calc_total_height(part_heights, top_pad, bottom_pad, gap)
 
-        # 저장 파일명/폴더명
         part_suffix = f"part{pi}"
         part_base = f"{base_name}_{part_suffix}" if len(parts) > 1 else base_name
         folder_name = f"images_{part_suffix}" if len(parts) > 1 else "images"
 
-        # images 저장
         files: List[Tuple[str, bytes]] = []
         fns: List[str] = []
         for idx, im in enumerate(part_imgs, start=1):
             fn = f"img_{idx:02d}.jpg"
             files.append((fn, _save_jpg_bytes(im)))
             fns.append(fn)
+
         resized_groups.append((folder_name, files))
 
-        # JSX 생성
         jsx_text = _build_jsx(
             base_name=part_base,
             canvas_h=part_canvas_h,
@@ -376,8 +497,7 @@ def _build_outputs(base_name: str, top_pad: int, bottom_pad: int, gap: int):
             image_files=fns,
             images_folder_name=folder_name,
         )
-        jsx_name = f"{part_base}_psd_build.jsx"
-        jsx_entries.append((jsx_name, jsx_text))
+        jsx_entries.append((f"{part_base}_psd_build.jsx", jsx_text))
 
     meta = {
         "count": len(resized_all),
@@ -386,20 +506,24 @@ def _build_outputs(base_name: str, top_pad: int, bottom_pad: int, gap: int):
         "bottom": bottom_pad,
         "gap": gap,
         "psd_parts": len(parts),
+        "max_total": MAX_TOTAL_IMAGES,
+        "max_per_psd": MAX_PER_PSD,
     }
 
-    zip_bytes = _zip_bundle(
-        base_name=base_name,
-        jpg_bytes=jpg_bytes,
-        jsx_entries=jsx_entries,
-        resized_groups=resized_groups,
-    )
-
+    zip_bytes = _zip_bundle(base_name, jpg_bytes, jsx_entries, resized_groups)
     return jpg_bytes, zip_bytes, meta
 
 
+# =========================================================
+# UI
+# =========================================================
 def main():
     st.set_page_config(page_title=APP_TITLE, layout="wide")
+
+    # ✅ 로그인은 무조건 "가장 먼저" 실행 (이 아래로는 인증된 사용자만)
+    require_login()
+
+    sidebar_auth_box()
     _init_state()
 
     st.markdown(
@@ -414,7 +538,6 @@ def main():
 
     left, right = st.columns([1.25, 0.75], gap="large")
 
-    # ---------------- LEFT ----------------
     with left:
         st.markdown("### 1) 업로드")
         cA, cB = st.columns([0.65, 0.35])
@@ -430,23 +553,26 @@ def main():
             replace_mode = st.checkbox("기존 목록 비우고 새로 담기", value=False)
 
         current_count = len(st.session_state[STATE_ITEMS])
-        st.caption(f"현재 목록: {current_count}/{MAX_TOTAL_IMAGES}장 (10장 초과 시 PSD 2개 자동 생성)")
+        st.caption(f"현재 목록: {current_count}/{MAX_TOTAL_IMAGES}장")
 
         add_clicked = st.button(
             "업로드 파일 목록에 추가",
             type="primary",
             use_container_width=True,
-            disabled=(not uploaded) or (current_count >= MAX_TOTAL_IMAGES and not replace_mode),
+            disabled=(not uploaded) and (not replace_mode),
         )
 
         if add_clicked and uploaded:
             if replace_mode:
                 _reset_all()
+                current_count = 0
+
             added, skipped_limit = _add_items_from_uploads(uploaded)
             if added == 0:
                 st.warning("추가된 새 이미지가 없습니다. (중복 제외 또는 제한 초과)")
             else:
                 st.success(f"추가 완료: 새 이미지 {added}개")
+
             if skipped_limit > 0:
                 st.warning(f"최대 {MAX_TOTAL_IMAGES}장 제한으로 {skipped_limit}개 파일(또는 ZIP 내 이미지)이 추가되지 않았습니다.")
 
@@ -470,7 +596,6 @@ def main():
             st.info("업로드된 이미지가 없습니다.")
         else:
             for i, it in enumerate(items):
-                # 썸네일 작아졌으니 비율 조정
                 row = st.columns([0.14, 0.56, 0.10, 0.10, 0.10])
                 with row[0]:
                     st.image(_make_thumb(it.pil), use_column_width=True)
@@ -513,18 +638,12 @@ def main():
                 st.rerun()
 
         if gen:
-            jpg_bytes, zip_bytes, meta = _build_outputs(
-                base_name=base_name,
-                top_pad=int(top_pad),
-                bottom_pad=int(bottom_pad),
-                gap=int(gap),
-            )
+            jpg_bytes, zip_bytes, meta = _build_outputs(base_name, int(top_pad), int(bottom_pad), int(gap))
             st.session_state[STATE_LAST_PREVIEW] = jpg_bytes
             st.session_state[STATE_LAST_ZIP] = zip_bytes
             st.session_state[STATE_LAST_META] = meta
             st.success("생성 완료! 오른쪽에서 미리보기/다운로드 하세요.")
 
-    # ---------------- RIGHT ----------------
     with right:
         st.markdown("### 미리보기")
         meta = st.session_state[STATE_LAST_META]
