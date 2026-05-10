@@ -40,7 +40,7 @@ STATE_SEEN = "seen_hashes"
 STATE_LAST_PREVIEW = "last_preview_jpg"
 STATE_LAST_ZIP = "last_bundle_zip"
 STATE_LAST_META = "last_meta"
-STATE_SELECTED_SHA = "selected_img_sha"
+STATE_SELECTED_ITEM = "selected_item_index"
 
 # auth states
 STATE_AUTH_OK = "auth_ok"
@@ -187,6 +187,12 @@ section[data-testid="stSidebar"] .stMarkdown h3 { font-size: 14px; letter-spacin
   white-space: nowrap !important;   /* ✅ '삭제' 세로 줄바꿈 방지 */
 }
 
+
+/* Compact reorder UI */
+.stButton button { min-height: 24px !important; }
+button[kind="secondary"] { padding: 0.1rem 0.42rem !important; }
+[data-testid="stImage"] img { object-fit: cover; }
+
 /* Softer divider */
 hr { opacity: 0.18; }
 
@@ -212,242 +218,6 @@ hr { opacity: 0.18; }
 
 /* tighten caption */
 [data-testid="stCaptionContainer"] { opacity: 0.80; }
-
-/* Compact reorder list */
-.ms-order-name {
-  font-size: 11.2px;
-  font-weight: 800;
-  line-height: 1.22;
-  letter-spacing: -0.32px;
-  margin-top: 0;
-}
-.ms-order-meta {
-  font-size: 10.2px;
-  line-height: 1.18;
-  color: rgba(0,0,0,0.58);
-  margin-top: 1px;
-}
-.ms-compact-gap { height: 2px; }
-
-/* 이미지 순서변경 영역: Cafe24 관리자처럼 작은 정사각형 아이콘 버튼 */
-button[aria-label="×"],
-button[aria-label="▲"],
-button[aria-label="▼"],
-button[aria-label="▴"],
-button[aria-label="▾"],
-button[aria-label="⇞"],
-button[aria-label="⇟"],
-button[aria-label="↵"] {
-  width: 24px !important;
-  min-width: 24px !important;
-  max-width: 24px !important;
-  height: 24px !important;
-  min-height: 24px !important;
-  max-height: 24px !important;
-  padding: 0 !important;
-  border-radius: 4px !important;
-  border: 1px solid #cfd6df !important;
-  background: #fff !important;
-  color: #2f3b4a !important;
-  line-height: 1 !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  box-shadow: none !important;
-}
-button[aria-label="×"] p,
-button[aria-label="▲"] p,
-button[aria-label="▼"] p,
-button[aria-label="▴"] p,
-button[aria-label="▾"] p,
-button[aria-label="⇞"] p,
-button[aria-label="⇟"] p,
-button[aria-label="↵"] p {
-  font-size: 11px !important;
-  line-height: 1 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-button[aria-label="×"] p { font-size: 13px !important; }
-button[aria-label="×"]:hover,
-button[aria-label="▲"]:hover,
-button[aria-label="▼"]:hover,
-button[aria-label="▴"]:hover,
-button[aria-label="▾"]:hover,
-button[aria-label="⇞"]:hover,
-button[aria-label="⇟"]:hover,
-button[aria-label="↵"]:hover {
-  border-color: #9aa6b2 !important;
-  background: #f7f8fa !important;
-}
-button[aria-label="×"]:disabled,
-button[aria-label="▲"]:disabled,
-button[aria-label="▼"]:disabled,
-button[aria-label="▴"]:disabled,
-button[aria-label="▾"]:disabled,
-button[aria-label="⇞"]:disabled,
-button[aria-label="⇟"]:disabled,
-button[aria-label="↵"]:disabled {
-  opacity: .38 !important;
-}
-
-/* 순서 바로 이동 입력도 작게 */
-div[data-testid="stNumberInput"] input {
-  min-height: 24px !important;
-  height: 24px !important;
-  padding: 0 0.25rem !important;
-  font-size: 11px !important;
-  text-align: center !important;
-}
-/* ✅ 순서변경 전용: Streamlit 기본 pill 버튼을 강제로 작은 정사각형 관리툴 버튼처럼 보이게 */
-.st-key-move_selected_up button,
-.st-key-move_selected_down button,
-.st-key-move_selected_top button,
-.st-key-move_selected_bottom button,
-.st-key-move_selected_to_number button,
-div[class*="st-key-del_"] button {
-  width: 22px !important;
-  min-width: 22px !important;
-  max-width: 22px !important;
-  height: 22px !important;
-  min-height: 22px !important;
-  max-height: 22px !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  border-radius: 3px !important;
-  border: 1px solid #bfc7d1 !important;
-  background: #fff !important;
-  color: #333 !important;
-  box-shadow: none !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  line-height: 1 !important;
-}
-.st-key-move_selected_up button p,
-.st-key-move_selected_down button p,
-.st-key-move_selected_top button p,
-.st-key-move_selected_bottom button p,
-.st-key-move_selected_to_number button p,
-div[class*="st-key-del_"] button p {
-  font-size: 10px !important;
-  line-height: 1 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-div[class*="st-key-del_"] button p { font-size: 12px !important; }
-.st-key-move_selected_up,
-.st-key-move_selected_down,
-.st-key-move_selected_top,
-.st-key-move_selected_bottom,
-.st-key-move_selected_to_number,
-div[class*="st-key-del_"] {
-  width: 22px !important;
-  min-width: 22px !important;
-  max-width: 22px !important;
-}
-
-
-/* ✅ FINAL: 순서 변경 영역 - Cafe24 관리자형 초소형 정사각형 버튼 */
-div[class*="st-key-move_selected_"] { width: 26px !important; min-width:26px !important; max-width:26px !important; }
-div[class*="st-key-move_selected_"] button,
-div[class*="st-key-del_"] button {
-  box-sizing: border-box !important;
-  width: 24px !important;
-  min-width: 24px !important;
-  max-width: 24px !important;
-  height: 23px !important;
-  min-height: 23px !important;
-  max-height: 23px !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  border-radius: 3px !important;
-  border: 1px solid #b8c0ca !important;
-  background: linear-gradient(#ffffff, #f6f7f9) !important;
-  color: #26323f !important;
-  box-shadow: none !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  line-height: 1 !important;
-}
-div[class*="st-key-move_selected_"] button p,
-div[class*="st-key-del_"] button p {
-  font-size: 10.5px !important;
-  font-weight: 700 !important;
-  line-height: 1 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-div[class*="st-key-del_"] button p { font-size: 12px !important; font-weight: 500 !important; }
-div[class*="st-key-move_selected_"] button:hover,
-div[class*="st-key-del_"] button:hover { border-color:#8d99a8 !important; background:#eef1f5 !important; }
-div[class*="st-key-move_selected_"] button:disabled { opacity:.42 !important; }
-
-/* 삭제 버튼 열과 이동 버튼 열이 겹치지 않게 여유 확보 */
-div[class*="st-key-del_"] { width: 26px !important; min-width:26px !important; max-width:26px !important; }
-.ms-order-name { font-size: 10.8px !important; line-height: 1.17 !important; }
-.ms-order-meta { font-size: 9.6px !important; line-height: 1.12 !important; }
-
-/* ✅ 2026-05-10 최종 보정: 겹침 방지 + 버튼 간격/크기 고정 */
-div[data-testid="stHorizontalBlock"] { overflow: visible !important; }
-.ms-order-name {
-  font-size: 10px !important;
-  font-weight: 400 !important;
-  line-height: 1.16 !important;
-  letter-spacing: -0.35px !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-}
-.ms-order-meta {
-  font-size: 8.8px !important;
-  font-weight: 400 !important;
-  line-height: 1.1 !important;
-  color: rgba(0,0,0,0.55) !important;
-  margin: 1px 0 0 0 !important;
-  padding: 0 !important;
-  white-space: nowrap !important;
-}
-.ms-compact-gap { height: 10px !important; }
-
-/* 위/아래/맨위/맨아래 + 삭제 버튼: 24px 정사각형 */
-div[class*="st-key-move_selected_"] { width: 30px !important; min-width:30px !important; max-width:30px !important; }
-div[class*="st-key-del_"] { width: 30px !important; min-width:30px !important; max-width:30px !important; }
-div[class*="st-key-move_selected_"] button,
-div[class*="st-key-del_"] button {
-  box-sizing: border-box !important;
-  width: 24px !important;
-  min-width: 24px !important;
-  max-width: 24px !important;
-  height: 24px !important;
-  min-height: 24px !important;
-  max-height: 24px !important;
-  padding: 0 !important;
-  margin: 0 auto !important;
-  border-radius: 3px !important;
-  border: 1px solid #b9c1ca !important;
-  background: linear-gradient(#ffffff, #f6f7f9) !important;
-  color: #2d3744 !important;
-  box-shadow: none !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  line-height: 1 !important;
-}
-div[class*="st-key-move_selected_"] button p,
-div[class*="st-key-del_"] button p {
-  font-size: 10px !important;
-  font-weight: 500 !important;
-  line-height: 1 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-div[class*="st-key-del_"] button p { font-size: 12px !important; font-weight: 400 !important; }
-
-
 </style>
             """,
             unsafe_allow_html=True,
@@ -998,74 +768,7 @@ def _init_state():
     st.session_state.setdefault(STATE_LAST_PREVIEW, None)
     st.session_state.setdefault(STATE_LAST_ZIP, None)
     st.session_state.setdefault(STATE_LAST_META, None)
-    st.session_state.setdefault(STATE_SELECTED_SHA, None)
-
-
-def _sync_selected_sha_with_items():
-    items = st.session_state.get(STATE_ITEMS, [])
-    selected_sha = st.session_state.get(STATE_SELECTED_SHA)
-    if not items:
-        st.session_state[STATE_SELECTED_SHA] = None
-        return
-    if selected_sha not in [it.sha1 for it in items]:
-        st.session_state[STATE_SELECTED_SHA] = None
-
-
-def _selected_index(items: List[ImgItem]) -> Optional[int]:
-    selected_sha = st.session_state.get(STATE_SELECTED_SHA)
-    for idx, it in enumerate(items):
-        if it.sha1 == selected_sha:
-            return idx
-    return None
-
-
-def _select_img(sha1: str):
-    key = f"sel_{sha1}"
-    if st.session_state.get(key):
-        st.session_state[STATE_SELECTED_SHA] = sha1
-    elif st.session_state.get(STATE_SELECTED_SHA) == sha1:
-        st.session_state[STATE_SELECTED_SHA] = None
-
-
-def _move_selected(delta: int):
-    items: List[ImgItem] = st.session_state[STATE_ITEMS]
-    idx = _selected_index(items)
-    if idx is None:
-        return
-    new_idx = max(0, min(len(items) - 1, idx + delta))
-    if new_idx == idx:
-        return
-    item = items.pop(idx)
-    items.insert(new_idx, item)
-    st.session_state[STATE_ITEMS] = items
-
-
-def _move_selected_to_position(pos_1based: int):
-    items: List[ImgItem] = st.session_state[STATE_ITEMS]
-    idx = _selected_index(items)
-    if idx is None:
-        return
-    new_idx = max(0, min(len(items) - 1, int(pos_1based) - 1))
-    if new_idx == idx:
-        return
-    item = items.pop(idx)
-    items.insert(new_idx, item)
-    st.session_state[STATE_ITEMS] = items
-
-
-def _delete_img_by_sha(sha1: str):
-    items: List[ImgItem] = st.session_state[STATE_ITEMS]
-    remove_idx = next((idx for idx, it in enumerate(items) if it.sha1 == sha1), None)
-    if remove_idx is None:
-        return
-    removed = items.pop(remove_idx)
-    st.session_state[STATE_ITEMS] = items
-    if st.session_state.get(STATE_SELECTED_SHA) == removed.sha1:
-        st.session_state[STATE_SELECTED_SHA] = items[min(remove_idx, len(items)-1)].sha1 if items else None
-    seen = st.session_state[STATE_SEEN]
-    if removed.sha1 in seen:
-        seen.remove(removed.sha1)
-    st.session_state[STATE_SEEN] = seen
+    st.session_state.setdefault(STATE_SELECTED_ITEM, None)
 
 
 def _reset_all():
@@ -1074,7 +777,7 @@ def _reset_all():
     st.session_state[STATE_LAST_PREVIEW] = None
     st.session_state[STATE_LAST_ZIP] = None
     st.session_state[STATE_LAST_META] = None
-    st.session_state[STATE_SELECTED_SHA] = None
+    st.session_state[STATE_SELECTED_ITEM] = None
 
 
 def _add_one_image(name: str, raw: bytes) -> bool:
@@ -1275,50 +978,88 @@ def main():
         # 3) Reorder / delete
         ms_section("3) 순서 변경 / 삭제")
         items: List[ImgItem] = st.session_state[STATE_ITEMS]
-        _sync_selected_sha_with_items()
 
         if not items:
             st.info("업로드된 이미지가 없습니다.")
         else:
-            selected_idx = _selected_index(items)
-            selected_label = "선택된 이미지 없음"
-            if selected_idx is not None:
-                selected_item = items[selected_idx]
-                selected_name = selected_item.name if len(selected_item.name) <= 34 else (selected_item.name[:31] + "…")
-                selected_label = f"현재 선택: {selected_idx + 1}번 · {selected_name}"
+            selected = st.session_state.get(STATE_SELECTED_ITEM)
+            if selected is not None and (selected < 0 or selected >= len(items)):
+                selected = None
+                st.session_state[STATE_SELECTED_ITEM] = None
 
-            ctrl = st.columns([0.66, 0.055, 0.055, 0.055, 0.055, 0.12], gap="medium")
-            with ctrl[1]:
-                st.button("▴", key="move_selected_up", disabled=(selected_idx is None or selected_idx == 0), use_container_width=False, on_click=_move_selected, args=(-1,))
-            with ctrl[2]:
-                st.button("▾", key="move_selected_down", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=False, on_click=_move_selected, args=(1,))
-            with ctrl[3]:
-                st.button("⌃", key="move_selected_top", disabled=(selected_idx is None or selected_idx == 0), use_container_width=False, on_click=_move_selected_to_position, args=(1,))
-            with ctrl[4]:
-                st.button("⌄", key="move_selected_bottom", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=False, on_click=_move_selected_to_position, args=(len(items),))
+            # 상단 이동 버튼: 오른쪽 정렬. 버튼 사이 간격은 현재 기준보다 적당히 줄인 형태.
+            tool = st.columns([0.70, 0.036, 0.036, 0.036, 0.036, 0.156])
+            with tool[1]:
+                btn_top = st.button("⇈", key="move_top", disabled=(selected is None or selected == 0), use_container_width=True)
+            with tool[2]:
+                btn_up = st.button("▴", key="move_up", disabled=(selected is None or selected == 0), use_container_width=True)
+            with tool[3]:
+                btn_down = st.button("▾", key="move_down", disabled=(selected is None or selected >= len(items) - 1), use_container_width=True)
+            with tool[4]:
+                btn_bottom = st.button("⇊", key="move_bottom", disabled=(selected is None or selected >= len(items) - 1), use_container_width=True)
+
+            if selected is not None:
+                if btn_top:
+                    item = items.pop(selected)
+                    items.insert(0, item)
+                    st.session_state[STATE_ITEMS] = items
+                    st.session_state[STATE_SELECTED_ITEM] = 0
+                    st.rerun()
+                if btn_up:
+                    items[selected - 1], items[selected] = items[selected], items[selected - 1]
+                    st.session_state[STATE_ITEMS] = items
+                    st.session_state[STATE_SELECTED_ITEM] = selected - 1
+                    st.rerun()
+                if btn_down:
+                    items[selected + 1], items[selected] = items[selected], items[selected + 1]
+                    st.session_state[STATE_ITEMS] = items
+                    st.session_state[STATE_SELECTED_ITEM] = selected + 1
+                    st.rerun()
+                if btn_bottom:
+                    item = items.pop(selected)
+                    items.append(item)
+                    st.session_state[STATE_ITEMS] = items
+                    st.session_state[STATE_SELECTED_ITEM] = len(items) - 1
+                    st.rerun()
 
             for i, it in enumerate(items):
-                selected = (st.session_state.get(STATE_SELECTED_SHA) == it.sha1)
-                row = st.columns([0.055, 0.115, 0.735, 0.095], gap="medium")
+                # 체크박스 / 썸네일 / 파일명 / 삭제 버튼을 분리해 겹침 방지
+                row = st.columns([0.05, 0.085, 0.67, 0.055, 0.14], vertical_alignment="center")
                 with row[0]:
-                    key = f"sel_{it.sha1}"
-                    st.session_state[key] = selected
-                    st.checkbox("선택", key=key, label_visibility="collapsed", on_change=_select_img, args=(it.sha1,))
+                    checked = st.checkbox("", value=(st.session_state.get(STATE_SELECTED_ITEM) == i), key=f"select_item_{i}", label_visibility="collapsed")
                 with row[1]:
-                    st.image(_make_thumb(it.pil), width=48)
+                    st.image(_make_thumb(it.pil), width=52)
                 with row[2]:
-                    short = it.name if len(it.name) <= 44 else (it.name[:41] + "…")
-                    st.markdown(f'<div class="ms-order-name">{i+1}. {short}</div><div class="ms-order-meta">원본: {it.pil.size[0]}×{it.pil.size[1]}</div>', unsafe_allow_html=True)
+                    short = it.name if len(it.name) <= 58 else (it.name[:55] + "…")
+                    st.markdown(
+                        f"<div style='font-size:11px; font-weight:400; line-height:1.15; letter-spacing:-0.25px; margin-left:4px;'>{i+1}. {short}</div>"
+                        f"<div style='font-size:10px; color:#777; line-height:1.15; margin-top:2px; margin-left:4px;'>원본: {it.pil.size[0]}×{it.pil.size[1]}</div>",
+                        unsafe_allow_html=True,
+                    )
                 with row[3]:
-                    st.button("×", key=f"del_{it.sha1}", use_container_width=False, on_click=_delete_img_by_sha, args=(it.sha1,))
-                st.markdown('<div class="ms-compact-gap"></div>', unsafe_allow_html=True)
+                    delete = st.button("×", key=f"del_{i}", use_container_width=True)
 
-            selected_idx = _selected_index(items)
-            move_row = st.columns([0.80, 0.07, 0.055, 0.075], gap="small")
-            with move_row[1]:
-                target_pos = st.number_input("번호", min_value=1, max_value=len(items), value=(selected_idx + 1 if selected_idx is not None else 1), step=1, label_visibility="collapsed", key="target_pos")
-            with move_row[2]:
-                st.button("↵", key="move_selected_to_number", disabled=(selected_idx is None), use_container_width=False, on_click=_move_selected_to_position, args=(int(st.session_state.get("target_pos", selected_idx + 1 if selected_idx is not None else 1)),))
+                prev_selected = st.session_state.get(STATE_SELECTED_ITEM)
+                if checked and prev_selected != i:
+                    st.session_state[STATE_SELECTED_ITEM] = i
+                    st.rerun()
+                if (not checked) and prev_selected == i:
+                    st.session_state[STATE_SELECTED_ITEM] = None
+                    st.rerun()
+
+                if delete:
+                    removed = items.pop(i)
+                    st.session_state[STATE_ITEMS] = items
+                    current = st.session_state.get(STATE_SELECTED_ITEM)
+                    if current == i:
+                        st.session_state[STATE_SELECTED_ITEM] = None
+                    elif current is not None and current > i:
+                        st.session_state[STATE_SELECTED_ITEM] = current - 1
+                    seen = st.session_state[STATE_SEEN]
+                    if removed.sha1 in seen:
+                        seen.remove(removed.sha1)
+                    st.session_state[STATE_SEEN] = seen
+                    st.rerun()
 
         st.divider()
 
