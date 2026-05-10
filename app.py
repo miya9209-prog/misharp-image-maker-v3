@@ -347,6 +347,48 @@ div[class*="st-key-del_"] {
   max-width: 22px !important;
 }
 
+
+/* ✅ FINAL: 순서 변경 영역 - Cafe24 관리자형 초소형 정사각형 버튼 */
+div[class*="st-key-move_selected_"] { width: 26px !important; min-width:26px !important; max-width:26px !important; }
+div[class*="st-key-move_selected_"] button,
+div[class*="st-key-del_"] button {
+  box-sizing: border-box !important;
+  width: 24px !important;
+  min-width: 24px !important;
+  max-width: 24px !important;
+  height: 23px !important;
+  min-height: 23px !important;
+  max-height: 23px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 3px !important;
+  border: 1px solid #b8c0ca !important;
+  background: linear-gradient(#ffffff, #f6f7f9) !important;
+  color: #26323f !important;
+  box-shadow: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+}
+div[class*="st-key-move_selected_"] button p,
+div[class*="st-key-del_"] button p {
+  font-size: 10.5px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+div[class*="st-key-del_"] button p { font-size: 12px !important; font-weight: 500 !important; }
+div[class*="st-key-move_selected_"] button:hover,
+div[class*="st-key-del_"] button:hover { border-color:#8d99a8 !important; background:#eef1f5 !important; }
+div[class*="st-key-move_selected_"] button:disabled { opacity:.42 !important; }
+
+/* 삭제 버튼 열과 이동 버튼 열이 겹치지 않게 여유 확보 */
+div[class*="st-key-del_"] { width: 26px !important; min-width:26px !important; max-width:26px !important; }
+.ms-order-name { font-size: 10.8px !important; line-height: 1.17 !important; }
+.ms-order-meta { font-size: 9.6px !important; line-height: 1.12 !important; }
+
 </style>
             """,
             unsafe_allow_html=True,
@@ -1186,19 +1228,19 @@ def main():
                 selected_name = selected_item.name if len(selected_item.name) <= 34 else (selected_item.name[:31] + "…")
                 selected_label = f"현재 선택: {selected_idx + 1}번 · {selected_name}"
 
-            ctrl = st.columns([0.82, 0.028, 0.028, 0.028, 0.028, 0.068], gap="small")
+            ctrl = st.columns([0.78, 0.045, 0.045, 0.045, 0.045, 0.04], gap="small")
             with ctrl[1]:
                 st.button("⌃", key="move_selected_up", disabled=(selected_idx is None or selected_idx == 0), use_container_width=False, on_click=_move_selected, args=(-1,))
             with ctrl[2]:
                 st.button("⌄", key="move_selected_down", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=False, on_click=_move_selected, args=(1,))
             with ctrl[3]:
-                st.button("⇧", key="move_selected_top", disabled=(selected_idx is None or selected_idx == 0), use_container_width=False, on_click=_move_selected_to_position, args=(1,))
+                st.button("↟", key="move_selected_top", disabled=(selected_idx is None or selected_idx == 0), use_container_width=False, on_click=_move_selected_to_position, args=(1,))
             with ctrl[4]:
-                st.button("⇩", key="move_selected_bottom", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=False, on_click=_move_selected_to_position, args=(len(items),))
+                st.button("↡", key="move_selected_bottom", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=False, on_click=_move_selected_to_position, args=(len(items),))
 
             for i, it in enumerate(items):
                 selected = (st.session_state.get(STATE_SELECTED_SHA) == it.sha1)
-                row = st.columns([0.035, 0.07, 0.865, 0.03], gap="small")
+                row = st.columns([0.045, 0.075, 0.825, 0.055], gap="small")
                 with row[0]:
                     key = f"sel_{it.sha1}"
                     st.session_state[key] = selected
@@ -1213,7 +1255,7 @@ def main():
                 st.markdown('<div class="ms-compact-gap"></div>', unsafe_allow_html=True)
 
             selected_idx = _selected_index(items)
-            move_row = st.columns([0.86, 0.045, 0.035, 0.06], gap="small")
+            move_row = st.columns([0.80, 0.07, 0.055, 0.075], gap="small")
             with move_row[1]:
                 target_pos = st.number_input("번호", min_value=1, max_value=len(items), value=(selected_idx + 1 if selected_idx is not None else 1), step=1, label_visibility="collapsed", key="target_pos")
             with move_row[2]:
