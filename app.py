@@ -995,8 +995,28 @@ def main():
                 selected = None
                 st.session_state[STATE_SELECTED_ITEM] = None
 
-            # 상단 이동 버튼: 버튼 간격을 넓혀 겹침 방지
-            tool = st.columns([0.60, 0.040, 0.022, 0.040, 0.022, 0.040, 0.022, 0.040, 0.174])
+            # 체크박스 상태를 먼저 동기화합니다.
+            # Streamlit은 체크박스 클릭 후 전체 화면을 다시 그리기 때문에,
+            # 버튼을 그리기 전에 선택 인덱스를 확정해야 상단 이동 버튼이 즉시 활성화됩니다.
+            checked_indices = []
+            for _idx, _item in enumerate(items):
+                _key = f"select_item_{_item.sha1}"
+                if st.session_state.get(_key, False):
+                    checked_indices.append(_idx)
+
+            if checked_indices:
+                selected = checked_indices[-1]
+                st.session_state[STATE_SELECTED_ITEM] = selected
+                # 단일 선택 유지
+                for _idx, _item in enumerate(items):
+                    st.session_state[f"select_item_{_item.sha1}"] = (_idx == selected)
+            elif selected is not None:
+                # 사용자가 선택된 체크박스를 다시 눌러 해제한 경우
+                st.session_state[STATE_SELECTED_ITEM] = None
+                selected = None
+
+            # 상단 이동 버튼: 간격을 넉넉히 두고, 선택 즉시 활성화되도록 구성
+            tool = st.columns([0.56, 0.045, 0.030, 0.045, 0.030, 0.045, 0.030, 0.045, 0.170])
             with tool[1]:
                 btn_top = st.button("⇈", key="move_top", disabled=(selected is None or selected == 0))
             with tool[3]:
@@ -1028,9 +1048,11 @@ def main():
 
             for i, it in enumerate(items):
                 # 체크박스 / 썸네일 / 파일명 / 삭제 버튼을 분리해 겹침 방지
-                row = st.columns([0.055, 0.125, 0.585, 0.070, 0.165], vertical_alignment="center")
+                row = st.columns([0.055, 0.135, 0.575, 0.070, 0.165], vertical_alignment="center")
+                check_key = f"select_item_{it.sha1}"
+                # 위에서 단일 선택 상태를 이미 맞춰두었으므로 여기서는 표시만 담당합니다.
                 with row[0]:
-                    checked = st.checkbox("", value=(st.session_state.get(STATE_SELECTED_ITEM) == i), key=f"select_item_{i}", label_visibility="collapsed")
+                    checked = st.checkbox("", key=check_key, label_visibility="collapsed")
                 with row[1]:
                     st.image(_make_thumb(it.pil), width=50)
                 with row[2]:
