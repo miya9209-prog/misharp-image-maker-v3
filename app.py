@@ -40,6 +40,7 @@ STATE_SEEN = "seen_hashes"
 STATE_LAST_PREVIEW = "last_preview_jpg"
 STATE_LAST_ZIP = "last_bundle_zip"
 STATE_LAST_META = "last_meta"
+STATE_SELECTED_SHA = "selected_img_sha"
 
 # auth states
 STATE_AUTH_OK = "auth_ok"
@@ -211,6 +212,35 @@ hr { opacity: 0.18; }
 
 /* tighten caption */
 [data-testid="stCaptionContainer"] { opacity: 0.80; }
+
+/* Reorder list */
+.ms-order-guide {
+  margin: -4px 0 10px 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(77,111,78,0.07);
+  border: 1px solid rgba(77,111,78,0.12);
+  font-size: 13px;
+  line-height: 1.55;
+  color: rgba(0,0,0,0.70);
+}
+.ms-row-selected {
+  padding: 8px 6px;
+  border-radius: 14px;
+  background: rgba(77,111,78,0.08);
+  border: 1px solid rgba(77,111,78,0.18);
+}
+.ms-row-normal {
+  padding: 8px 6px;
+  border-radius: 14px;
+  border: 1px solid rgba(0,0,0,0.04);
+}
+.ms-selected-text {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+  color: #3f5d40;
+}
 </style>
             """,
             unsafe_allow_html=True,
@@ -761,6 +791,59 @@ def _init_state():
     st.session_state.setdefault(STATE_LAST_PREVIEW, None)
     st.session_state.setdefault(STATE_LAST_ZIP, None)
     st.session_state.setdefault(STATE_LAST_META, None)
+    st.session_state.setdefault(STATE_SELECTED_SHA, None)
+
+
+def _sync_selected_sha_with_items():
+    items = st.session_state.get(STATE_ITEMS, [])
+    selected_sha = st.session_state.get(STATE_SELECTED_SHA)
+    if not items:
+        st.session_state[STATE_SELECTED_SHA] = None
+        return
+    if selected_sha not in [it.sha1 for it in items]:
+        st.session_state[STATE_SELECTED_SHA] = items[0].sha1
+
+
+def _selected_index(items: List[ImgItem]) -> Optional[int]:
+    selected_sha = st.session_state.get(STATE_SELECTED_SHA)
+    for idx, it in enumerate(items):
+        if it.sha1 == selected_sha:
+            return idx
+    return None
+
+
+def _select_img(sha1: str):
+    key = f"sel_{sha1}"
+    if st.session_state.get(key):
+        st.session_state[STATE_SELECTED_SHA] = sha1
+    elif st.session_state.get(STATE_SELECTED_SHA) == sha1:
+        st.session_state[STATE_SELECTED_SHA] = None
+
+
+def _move_selected(delta: int):
+    items: List[ImgItem] = st.session_state[STATE_ITEMS]
+    idx = _selected_index(items)
+    if idx is None:
+        return
+    new_idx = max(0, min(len(items) - 1, idx + delta))
+    if new_idx == idx:
+        return
+    item = items.pop(idx)
+    items.insert(new_idx, item)
+    st.session_state[STATE_ITEMS] = items
+
+
+def _move_selected_to_position(pos_1based: int):
+    items: List[ImgItem] = st.session_state[STATE_ITEMS]
+    idx = _selected_index(items)
+    if idx is None:
+        return
+    new_idx = max(0, min(len(items) - 1, int(pos_1based) - 1))
+    if new_idx == idx:
+        return
+    item = items.pop(idx)
+    items.insert(new_idx, item)
+    st.session_state[STATE_ITEMS] = items
 
 
 def _reset_all():
@@ -769,6 +852,7 @@ def _reset_all():
     st.session_state[STATE_LAST_PREVIEW] = None
     st.session_state[STATE_LAST_ZIP] = None
     st.session_state[STATE_LAST_META] = None
+    st.session_state[STATE_SELECTED_SHA] = None
 
 
 def _add_one_image(name: str, raw: bytes) -> bool:
@@ -969,41 +1053,90 @@ def main():
         # 3) Reorder / delete
         ms_section("3) 순서 변경 / 삭제")
         items: List[ImgItem] = st.session_state[STATE_ITEMS]
+        _sync_selected_sha_with_items()
 
         if not items:
             st.info("업로드된 이미지가 없습니다.")
         else:
-            for i, it in enumerate(items):
-                # ✅ 마지막 칸(삭제) 폭 약간 키움 → '삭제' 세로 줄바꿈 방지
-                row = st.columns([0.14, 0.54, 0.10, 0.10, 0.12])
-                with row[0]:
-                    st.image(_make_thumb(it.pil), use_column_width=True)
-                with row[1]:
-                    short = it.name if len(it.name) <= 44 else (it.name[:41] + "…")
-                    st.markdown(f"**{i+1}. {short}**  \n원본: {it.pil.size[0]}×{it.pil.size[1]}")
-                with row[2]:
-                    up = st.button("▲", key=f"up_{i}", disabled=(i == 0), use_container_width=True)
-                with row[3]:
-                    down = st.button("▼", key=f"down_{i}", disabled=(i == len(items) - 1), use_container_width=True)
-                with row[4]:
-                    delete = st.button("삭제", key=f"del_{i}", use_container_width=True)
+            selected_idx = _selected_index(items)
+            selected_label = "선택된 이미지 없음"
+            if selected_idx is not None:
+                selected_item = items[selected_idx]
+                selected_name = selected_item.name if len(selected_item.name) <= 34 else (selected_item.name[:31] + "…")
+                selected_label = f"현재 선택: {selected_idx + 1}번 · {selected_name}"
 
-                if up:
-                    items[i - 1], items[i] = items[i], items[i - 1]
-                    st.session_state[STATE_ITEMS] = items
+            st.markdown(
+                '<div class="ms-order-guide">체크박스로 이미지를 선택한 뒤 상단/하단 버튼으로 빠르게 순서를 바꿉니다. 여러 번 누를 필요 없이, 아래의 <b>몇 번째로 이동</b> 기능으로 원하는 위치에 바로 보낼 수 있습니다.</div>',
+                unsafe_allow_html=True,
+            )
+
+            ctrl = st.columns([0.34, 0.16, 0.16, 0.17, 0.17])
+            with ctrl[0]:
+                st.markdown(f'<div class="ms-selected-text">{selected_label}</div>', unsafe_allow_html=True)
+            with ctrl[1]:
+                if st.button("▲ 위로", key="move_selected_up", disabled=(selected_idx is None or selected_idx == 0), use_container_width=True):
+                    _move_selected(-1)
                     st.rerun()
-                if down:
-                    items[i + 1], items[i] = items[i], items[i + 1]
-                    st.session_state[STATE_ITEMS] = items
+            with ctrl[2]:
+                if st.button("▼ 아래로", key="move_selected_down", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=True):
+                    _move_selected(1)
                     st.rerun()
+            with ctrl[3]:
+                if st.button("맨 위로", key="move_selected_top", disabled=(selected_idx is None or selected_idx == 0), use_container_width=True):
+                    _move_selected_to_position(1)
+                    st.rerun()
+            with ctrl[4]:
+                if st.button("맨 아래로", key="move_selected_bottom", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=True):
+                    _move_selected_to_position(len(items))
+                    st.rerun()
+
+            st.caption("이미지 앞 체크박스 선택 → 순서 이동 → 생성하기 순서로 사용하세요.")
+
+            for i, it in enumerate(items):
+                selected = (st.session_state.get(STATE_SELECTED_SHA) == it.sha1)
+                st.markdown(f'<div class="{"ms-row-selected" if selected else "ms-row-normal"}">', unsafe_allow_html=True)
+                row = st.columns([0.07, 0.14, 0.56, 0.11, 0.12])
+                with row[0]:
+                    key = f"sel_{it.sha1}"
+                    st.session_state[key] = selected
+                    st.checkbox("선택", key=key, label_visibility="collapsed", on_change=_select_img, args=(it.sha1,))
+                with row[1]:
+                    st.image(_make_thumb(it.pil), use_column_width=True)
+                with row[2]:
+                    short = it.name if len(it.name) <= 48 else (it.name[:45] + "…")
+                    st.markdown(f"**{i+1}. {short}**  \n원본: {it.pil.size[0]}×{it.pil.size[1]}")
+                with row[3]:
+                    if st.button("선택", key=f"pick_{it.sha1}", use_container_width=True):
+                        st.session_state[STATE_SELECTED_SHA] = it.sha1
+                        st.rerun()
+                with row[4]:
+                    delete = st.button("삭제", key=f"del_{it.sha1}", use_container_width=True)
+
+                st.markdown('</div>', unsafe_allow_html=True)
+
                 if delete:
                     removed = items.pop(i)
                     st.session_state[STATE_ITEMS] = items
+                    if st.session_state.get(STATE_SELECTED_SHA) == removed.sha1:
+                        st.session_state[STATE_SELECTED_SHA] = items[min(i, len(items)-1)].sha1 if items else None
                     seen = st.session_state[STATE_SEEN]
                     if removed.sha1 in seen:
                         seen.remove(removed.sha1)
                     st.session_state[STATE_SEEN] = seen
                     st.rerun()
+
+            selected_idx = _selected_index(items)
+            move_row = st.columns([0.40, 0.20, 0.16, 0.24])
+            with move_row[0]:
+                st.markdown("**선택한 상품의 진열순위**")
+            with move_row[1]:
+                target_pos = st.number_input("번호", min_value=1, max_value=len(items), value=(selected_idx + 1 if selected_idx is not None else 1), step=1, label_visibility="collapsed", key="target_pos")
+            with move_row[2]:
+                if st.button("번호로 변경", key="move_selected_to_number", disabled=(selected_idx is None), use_container_width=True):
+                    _move_selected_to_position(int(target_pos))
+                    st.rerun()
+            with move_row[3]:
+                st.caption(f"총 {len(items)}장")
 
         st.divider()
 
