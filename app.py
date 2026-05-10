@@ -389,6 +389,65 @@ div[class*="st-key-del_"] { width: 26px !important; min-width:26px !important; m
 .ms-order-name { font-size: 10.8px !important; line-height: 1.17 !important; }
 .ms-order-meta { font-size: 9.6px !important; line-height: 1.12 !important; }
 
+/* ✅ 2026-05-10 최종 보정: 겹침 방지 + 버튼 간격/크기 고정 */
+div[data-testid="stHorizontalBlock"] { overflow: visible !important; }
+.ms-order-name {
+  font-size: 10px !important;
+  font-weight: 400 !important;
+  line-height: 1.16 !important;
+  letter-spacing: -0.35px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+.ms-order-meta {
+  font-size: 8.8px !important;
+  font-weight: 400 !important;
+  line-height: 1.1 !important;
+  color: rgba(0,0,0,0.55) !important;
+  margin: 1px 0 0 0 !important;
+  padding: 0 !important;
+  white-space: nowrap !important;
+}
+.ms-compact-gap { height: 10px !important; }
+
+/* 위/아래/맨위/맨아래 + 삭제 버튼: 24px 정사각형 */
+div[class*="st-key-move_selected_"] { width: 30px !important; min-width:30px !important; max-width:30px !important; }
+div[class*="st-key-del_"] { width: 30px !important; min-width:30px !important; max-width:30px !important; }
+div[class*="st-key-move_selected_"] button,
+div[class*="st-key-del_"] button {
+  box-sizing: border-box !important;
+  width: 24px !important;
+  min-width: 24px !important;
+  max-width: 24px !important;
+  height: 24px !important;
+  min-height: 24px !important;
+  max-height: 24px !important;
+  padding: 0 !important;
+  margin: 0 auto !important;
+  border-radius: 3px !important;
+  border: 1px solid #b9c1ca !important;
+  background: linear-gradient(#ffffff, #f6f7f9) !important;
+  color: #2d3744 !important;
+  box-shadow: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+}
+div[class*="st-key-move_selected_"] button p,
+div[class*="st-key-del_"] button p {
+  font-size: 10px !important;
+  font-weight: 500 !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+div[class*="st-key-del_"] button p { font-size: 12px !important; font-weight: 400 !important; }
+
+
 </style>
             """,
             unsafe_allow_html=True,
@@ -1228,19 +1287,19 @@ def main():
                 selected_name = selected_item.name if len(selected_item.name) <= 34 else (selected_item.name[:31] + "…")
                 selected_label = f"현재 선택: {selected_idx + 1}번 · {selected_name}"
 
-            ctrl = st.columns([0.78, 0.045, 0.045, 0.045, 0.045, 0.04], gap="small")
+            ctrl = st.columns([0.66, 0.055, 0.055, 0.055, 0.055, 0.12], gap="medium")
             with ctrl[1]:
-                st.button("⌃", key="move_selected_up", disabled=(selected_idx is None or selected_idx == 0), use_container_width=False, on_click=_move_selected, args=(-1,))
+                st.button("▴", key="move_selected_up", disabled=(selected_idx is None or selected_idx == 0), use_container_width=False, on_click=_move_selected, args=(-1,))
             with ctrl[2]:
-                st.button("⌄", key="move_selected_down", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=False, on_click=_move_selected, args=(1,))
+                st.button("▾", key="move_selected_down", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=False, on_click=_move_selected, args=(1,))
             with ctrl[3]:
-                st.button("↟", key="move_selected_top", disabled=(selected_idx is None or selected_idx == 0), use_container_width=False, on_click=_move_selected_to_position, args=(1,))
+                st.button("⌃", key="move_selected_top", disabled=(selected_idx is None or selected_idx == 0), use_container_width=False, on_click=_move_selected_to_position, args=(1,))
             with ctrl[4]:
-                st.button("↡", key="move_selected_bottom", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=False, on_click=_move_selected_to_position, args=(len(items),))
+                st.button("⌄", key="move_selected_bottom", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=False, on_click=_move_selected_to_position, args=(len(items),))
 
             for i, it in enumerate(items):
                 selected = (st.session_state.get(STATE_SELECTED_SHA) == it.sha1)
-                row = st.columns([0.045, 0.075, 0.825, 0.055], gap="small")
+                row = st.columns([0.055, 0.115, 0.735, 0.095], gap="medium")
                 with row[0]:
                     key = f"sel_{it.sha1}"
                     st.session_state[key] = selected
@@ -1248,7 +1307,7 @@ def main():
                 with row[1]:
                     st.image(_make_thumb(it.pil), width=48)
                 with row[2]:
-                    short = it.name if len(it.name) <= 48 else (it.name[:45] + "…")
+                    short = it.name if len(it.name) <= 44 else (it.name[:41] + "…")
                     st.markdown(f'<div class="ms-order-name">{i+1}. {short}</div><div class="ms-order-meta">원본: {it.pil.size[0]}×{it.pil.size[1]}</div>', unsafe_allow_html=True)
                 with row[3]:
                     st.button("×", key=f"del_{it.sha1}", use_container_width=False, on_click=_delete_img_by_sha, args=(it.sha1,))
