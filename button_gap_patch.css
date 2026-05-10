@@ -1,0 +1,21 @@
+
+/* 버튼 간격 수정 */
+.reorder-toolbar {
+    display:flex;
+    gap:6px; /* 기존 대비 약 50% 축소 */
+    align-items:center;
+}
+
+/* 파일명 스타일 */
+.file-name{
+    font-size:12px;
+    font-weight:400;
+    line-height:1.2;
+}
+
+/* 썸네일 겹침 방지 */
+.thumb-row{
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+}
