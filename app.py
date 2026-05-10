@@ -215,33 +215,88 @@ hr { opacity: 0.18; }
 
 /* Compact reorder list */
 .ms-order-name {
-  font-size: 12.5px;
+  font-size: 11.2px;
   font-weight: 800;
-  line-height: 1.35;
-  letter-spacing: -0.25px;
-  margin-top: 1px;
+  line-height: 1.22;
+  letter-spacing: -0.32px;
+  margin-top: 0;
 }
 .ms-order-meta {
-  font-size: 11.2px;
-  line-height: 1.25;
-  color: rgba(0,0,0,0.62);
-  margin-top: 2px;
+  font-size: 10.2px;
+  line-height: 1.18;
+  color: rgba(0,0,0,0.58);
+  margin-top: 1px;
 }
-.ms-compact-gap { height: 4px; }
-div[data-testid="column"] .stButton button {
-  min-height: 30px !important;
+.ms-compact-gap { height: 2px; }
+
+/* 이미지 순서변경 영역: Cafe24 관리자처럼 작은 정사각형 아이콘 버튼 */
+button[aria-label="×"],
+button[aria-label="▲"],
+button[aria-label="▼"],
+button[aria-label="▴"],
+button[aria-label="▾"],
+button[aria-label="⇞"],
+button[aria-label="⇟"],
+button[aria-label="↵"] {
+  width: 24px !important;
+  min-width: 24px !important;
+  max-width: 24px !important;
+  height: 24px !important;
+  min-height: 24px !important;
+  max-height: 24px !important;
+  padding: 0 !important;
+  border-radius: 4px !important;
+  border: 1px solid #cfd6df !important;
+  background: #fff !important;
+  color: #2f3b4a !important;
+  line-height: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: none !important;
 }
-/* Compact icon buttons in reorder list */
-.ms-icon-note { font-size: 11px; opacity: .55; }
-button[kind="secondary"] {
-  padding-left: 0.42rem !important;
-  padding-right: 0.42rem !important;
+button[aria-label="×"] p,
+button[aria-label="▲"] p,
+button[aria-label="▼"] p,
+button[aria-label="▴"] p,
+button[aria-label="▾"] p,
+button[aria-label="⇞"] p,
+button[aria-label="⇟"] p,
+button[aria-label="↵"] p {
+  font-size: 11px !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
+button[aria-label="×"] p { font-size: 13px !important; }
+button[aria-label="×"]:hover,
+button[aria-label="▲"]:hover,
+button[aria-label="▼"]:hover,
+button[aria-label="▴"]:hover,
+button[aria-label="▾"]:hover,
+button[aria-label="⇞"]:hover,
+button[aria-label="⇟"]:hover,
+button[aria-label="↵"]:hover {
+  border-color: #9aa6b2 !important;
+  background: #f7f8fa !important;
+}
+button[aria-label="×"]:disabled,
+button[aria-label="▲"]:disabled,
+button[aria-label="▼"]:disabled,
+button[aria-label="▴"]:disabled,
+button[aria-label="▾"]:disabled,
+button[aria-label="⇞"]:disabled,
+button[aria-label="⇟"]:disabled,
+button[aria-label="↵"]:disabled {
+  opacity: .38 !important;
+}
+
+/* 순서 바로 이동 입력도 작게 */
 div[data-testid="stNumberInput"] input {
-  min-height: 30px !important;
-  height: 30px !important;
-  padding: 0.16rem 0.35rem !important;
-  font-size: 12px !important;
+  min-height: 24px !important;
+  height: 24px !important;
+  padding: 0 0.25rem !important;
+  font-size: 11px !important;
   text-align: center !important;
 }
 </style>
@@ -1083,34 +1138,34 @@ def main():
                 selected_name = selected_item.name if len(selected_item.name) <= 34 else (selected_item.name[:31] + "…")
                 selected_label = f"현재 선택: {selected_idx + 1}번 · {selected_name}"
 
-            ctrl = st.columns([0.80, 0.04, 0.04, 0.04, 0.04, 0.04], gap="small")
+            ctrl = st.columns([0.84, 0.032, 0.032, 0.032, 0.032, 0.032], gap="small")
             with ctrl[1]:
-                st.button("▴", key="move_selected_up", disabled=(selected_idx is None or selected_idx == 0), use_container_width=True, on_click=_move_selected, args=(-1,))
+                st.button("▲", key="move_selected_up", disabled=(selected_idx is None or selected_idx == 0), use_container_width=True, on_click=_move_selected, args=(-1,))
             with ctrl[2]:
-                st.button("▾", key="move_selected_down", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=True, on_click=_move_selected, args=(1,))
+                st.button("▼", key="move_selected_down", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=True, on_click=_move_selected, args=(1,))
             with ctrl[3]:
-                st.button("⏶", key="move_selected_top", disabled=(selected_idx is None or selected_idx == 0), use_container_width=True, on_click=_move_selected_to_position, args=(1,))
+                st.button("⇞", key="move_selected_top", disabled=(selected_idx is None or selected_idx == 0), use_container_width=True, on_click=_move_selected_to_position, args=(1,))
             with ctrl[4]:
-                st.button("⏷", key="move_selected_bottom", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=True, on_click=_move_selected_to_position, args=(len(items),))
+                st.button("⇟", key="move_selected_bottom", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=True, on_click=_move_selected_to_position, args=(len(items),))
 
             for i, it in enumerate(items):
                 selected = (st.session_state.get(STATE_SELECTED_SHA) == it.sha1)
-                row = st.columns([0.04, 0.095, 0.805, 0.045], gap="small")
+                row = st.columns([0.035, 0.075, 0.855, 0.035], gap="small")
                 with row[0]:
                     key = f"sel_{it.sha1}"
                     st.session_state[key] = selected
                     st.checkbox("선택", key=key, label_visibility="collapsed", on_change=_select_img, args=(it.sha1,))
                 with row[1]:
-                    st.image(_make_thumb(it.pil), width=58)
+                    st.image(_make_thumb(it.pil), width=48)
                 with row[2]:
-                    short = it.name if len(it.name) <= 42 else (it.name[:39] + "…")
+                    short = it.name if len(it.name) <= 48 else (it.name[:45] + "…")
                     st.markdown(f'<div class="ms-order-name">{i+1}. {short}</div><div class="ms-order-meta">원본: {it.pil.size[0]}×{it.pil.size[1]}</div>', unsafe_allow_html=True)
                 with row[3]:
                     st.button("×", key=f"del_{it.sha1}", use_container_width=True, on_click=_delete_img_by_sha, args=(it.sha1,))
                 st.markdown('<div class="ms-compact-gap"></div>', unsafe_allow_html=True)
 
             selected_idx = _selected_index(items)
-            move_row = st.columns([0.80, 0.055, 0.045, 0.10], gap="small")
+            move_row = st.columns([0.86, 0.045, 0.035, 0.06], gap="small")
             with move_row[1]:
                 target_pos = st.number_input("번호", min_value=1, max_value=len(items), value=(selected_idx + 1 if selected_idx is not None else 1), step=1, label_visibility="collapsed", key="target_pos")
             with move_row[2]:
