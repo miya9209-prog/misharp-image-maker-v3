@@ -229,7 +229,20 @@ hr { opacity: 0.18; }
 }
 .ms-compact-gap { height: 4px; }
 div[data-testid="column"] .stButton button {
-  min-height: 34px !important;
+  min-height: 30px !important;
+}
+/* Compact icon buttons in reorder list */
+.ms-icon-note { font-size: 11px; opacity: .55; }
+button[kind="secondary"] {
+  padding-left: 0.42rem !important;
+  padding-right: 0.42rem !important;
+}
+div[data-testid="stNumberInput"] input {
+  min-height: 30px !important;
+  height: 30px !important;
+  padding: 0.16rem 0.35rem !important;
+  font-size: 12px !important;
+  text-align: center !important;
 }
 </style>
             """,
@@ -791,7 +804,7 @@ def _sync_selected_sha_with_items():
         st.session_state[STATE_SELECTED_SHA] = None
         return
     if selected_sha not in [it.sha1 for it in items]:
-        st.session_state[STATE_SELECTED_SHA] = items[0].sha1
+        st.session_state[STATE_SELECTED_SHA] = None
 
 
 def _selected_index(items: List[ImgItem]) -> Optional[int]:
@@ -1070,19 +1083,19 @@ def main():
                 selected_name = selected_item.name if len(selected_item.name) <= 34 else (selected_item.name[:31] + "…")
                 selected_label = f"현재 선택: {selected_idx + 1}번 · {selected_name}"
 
-            ctrl = st.columns([0.72, 0.07, 0.07, 0.07, 0.07])
+            ctrl = st.columns([0.80, 0.04, 0.04, 0.04, 0.04, 0.04], gap="small")
             with ctrl[1]:
-                st.button("▲", key="move_selected_up", disabled=(selected_idx is None or selected_idx == 0), use_container_width=True, on_click=_move_selected, args=(-1,))
+                st.button("▴", key="move_selected_up", disabled=(selected_idx is None or selected_idx == 0), use_container_width=True, on_click=_move_selected, args=(-1,))
             with ctrl[2]:
-                st.button("▼", key="move_selected_down", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=True, on_click=_move_selected, args=(1,))
+                st.button("▾", key="move_selected_down", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=True, on_click=_move_selected, args=(1,))
             with ctrl[3]:
-                st.button("⇧", key="move_selected_top", disabled=(selected_idx is None or selected_idx == 0), use_container_width=True, on_click=_move_selected_to_position, args=(1,))
+                st.button("⏶", key="move_selected_top", disabled=(selected_idx is None or selected_idx == 0), use_container_width=True, on_click=_move_selected_to_position, args=(1,))
             with ctrl[4]:
-                st.button("⇩", key="move_selected_bottom", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=True, on_click=_move_selected_to_position, args=(len(items),))
+                st.button("⏷", key="move_selected_bottom", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=True, on_click=_move_selected_to_position, args=(len(items),))
 
             for i, it in enumerate(items):
                 selected = (st.session_state.get(STATE_SELECTED_SHA) == it.sha1)
-                row = st.columns([0.045, 0.105, 0.77, 0.08], gap="small")
+                row = st.columns([0.04, 0.095, 0.805, 0.045], gap="small")
                 with row[0]:
                     key = f"sel_{it.sha1}"
                     st.session_state[key] = selected
@@ -1093,17 +1106,15 @@ def main():
                     short = it.name if len(it.name) <= 42 else (it.name[:39] + "…")
                     st.markdown(f'<div class="ms-order-name">{i+1}. {short}</div><div class="ms-order-meta">원본: {it.pil.size[0]}×{it.pil.size[1]}</div>', unsafe_allow_html=True)
                 with row[3]:
-                    st.button("✕", key=f"del_{it.sha1}", use_container_width=True, on_click=_delete_img_by_sha, args=(it.sha1,))
+                    st.button("×", key=f"del_{it.sha1}", use_container_width=True, on_click=_delete_img_by_sha, args=(it.sha1,))
                 st.markdown('<div class="ms-compact-gap"></div>', unsafe_allow_html=True)
 
             selected_idx = _selected_index(items)
-            move_row = st.columns([0.74, 0.10, 0.08, 0.08])
+            move_row = st.columns([0.80, 0.055, 0.045, 0.10], gap="small")
             with move_row[1]:
                 target_pos = st.number_input("번호", min_value=1, max_value=len(items), value=(selected_idx + 1 if selected_idx is not None else 1), step=1, label_visibility="collapsed", key="target_pos")
             with move_row[2]:
-                st.button("변경", key="move_selected_to_number", disabled=(selected_idx is None), use_container_width=True, on_click=_move_selected_to_position, args=(int(st.session_state.get("target_pos", selected_idx + 1 if selected_idx is not None else 1)),))
-            with move_row[3]:
-                st.caption(f"총 {len(items)}장")
+                st.button("↵", key="move_selected_to_number", disabled=(selected_idx is None), use_container_width=True, on_click=_move_selected_to_position, args=(int(st.session_state.get("target_pos", selected_idx + 1 if selected_idx is not None else 1)),))
 
         st.divider()
 
