@@ -299,6 +299,54 @@ div[data-testid="stNumberInput"] input {
   font-size: 11px !important;
   text-align: center !important;
 }
+/* ✅ 순서변경 전용: Streamlit 기본 pill 버튼을 강제로 작은 정사각형 관리툴 버튼처럼 보이게 */
+.st-key-move_selected_up button,
+.st-key-move_selected_down button,
+.st-key-move_selected_top button,
+.st-key-move_selected_bottom button,
+.st-key-move_selected_to_number button,
+div[class*="st-key-del_"] button {
+  width: 22px !important;
+  min-width: 22px !important;
+  max-width: 22px !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  max-height: 22px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 3px !important;
+  border: 1px solid #bfc7d1 !important;
+  background: #fff !important;
+  color: #333 !important;
+  box-shadow: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+}
+.st-key-move_selected_up button p,
+.st-key-move_selected_down button p,
+.st-key-move_selected_top button p,
+.st-key-move_selected_bottom button p,
+.st-key-move_selected_to_number button p,
+div[class*="st-key-del_"] button p {
+  font-size: 10px !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+div[class*="st-key-del_"] button p { font-size: 12px !important; }
+.st-key-move_selected_up,
+.st-key-move_selected_down,
+.st-key-move_selected_top,
+.st-key-move_selected_bottom,
+.st-key-move_selected_to_number,
+div[class*="st-key-del_"] {
+  width: 22px !important;
+  min-width: 22px !important;
+  max-width: 22px !important;
+}
+
 </style>
             """,
             unsafe_allow_html=True,
@@ -1138,19 +1186,19 @@ def main():
                 selected_name = selected_item.name if len(selected_item.name) <= 34 else (selected_item.name[:31] + "…")
                 selected_label = f"현재 선택: {selected_idx + 1}번 · {selected_name}"
 
-            ctrl = st.columns([0.84, 0.032, 0.032, 0.032, 0.032, 0.032], gap="small")
+            ctrl = st.columns([0.82, 0.028, 0.028, 0.028, 0.028, 0.068], gap="small")
             with ctrl[1]:
-                st.button("▲", key="move_selected_up", disabled=(selected_idx is None or selected_idx == 0), use_container_width=True, on_click=_move_selected, args=(-1,))
+                st.button("⌃", key="move_selected_up", disabled=(selected_idx is None or selected_idx == 0), use_container_width=False, on_click=_move_selected, args=(-1,))
             with ctrl[2]:
-                st.button("▼", key="move_selected_down", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=True, on_click=_move_selected, args=(1,))
+                st.button("⌄", key="move_selected_down", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=False, on_click=_move_selected, args=(1,))
             with ctrl[3]:
-                st.button("⇞", key="move_selected_top", disabled=(selected_idx is None or selected_idx == 0), use_container_width=True, on_click=_move_selected_to_position, args=(1,))
+                st.button("⇧", key="move_selected_top", disabled=(selected_idx is None or selected_idx == 0), use_container_width=False, on_click=_move_selected_to_position, args=(1,))
             with ctrl[4]:
-                st.button("⇟", key="move_selected_bottom", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=True, on_click=_move_selected_to_position, args=(len(items),))
+                st.button("⇩", key="move_selected_bottom", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=False, on_click=_move_selected_to_position, args=(len(items),))
 
             for i, it in enumerate(items):
                 selected = (st.session_state.get(STATE_SELECTED_SHA) == it.sha1)
-                row = st.columns([0.035, 0.075, 0.855, 0.035], gap="small")
+                row = st.columns([0.035, 0.07, 0.865, 0.03], gap="small")
                 with row[0]:
                     key = f"sel_{it.sha1}"
                     st.session_state[key] = selected
@@ -1161,7 +1209,7 @@ def main():
                     short = it.name if len(it.name) <= 48 else (it.name[:45] + "…")
                     st.markdown(f'<div class="ms-order-name">{i+1}. {short}</div><div class="ms-order-meta">원본: {it.pil.size[0]}×{it.pil.size[1]}</div>', unsafe_allow_html=True)
                 with row[3]:
-                    st.button("×", key=f"del_{it.sha1}", use_container_width=True, on_click=_delete_img_by_sha, args=(it.sha1,))
+                    st.button("×", key=f"del_{it.sha1}", use_container_width=False, on_click=_delete_img_by_sha, args=(it.sha1,))
                 st.markdown('<div class="ms-compact-gap"></div>', unsafe_allow_html=True)
 
             selected_idx = _selected_index(items)
@@ -1169,7 +1217,7 @@ def main():
             with move_row[1]:
                 target_pos = st.number_input("번호", min_value=1, max_value=len(items), value=(selected_idx + 1 if selected_idx is not None else 1), step=1, label_visibility="collapsed", key="target_pos")
             with move_row[2]:
-                st.button("↵", key="move_selected_to_number", disabled=(selected_idx is None), use_container_width=True, on_click=_move_selected_to_position, args=(int(st.session_state.get("target_pos", selected_idx + 1 if selected_idx is not None else 1)),))
+                st.button("↵", key="move_selected_to_number", disabled=(selected_idx is None), use_container_width=False, on_click=_move_selected_to_position, args=(int(st.session_state.get("target_pos", selected_idx + 1 if selected_idx is not None else 1)),))
 
         st.divider()
 
