@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import List, Tuple, Dict, Optional
 
 import streamlit as st
+import streamlit.components.v1 as components
 from PIL import Image, ImageSequence
 
 from datetime import datetime, timedelta
@@ -41,6 +42,7 @@ STATE_LAST_PREVIEW = "last_preview_jpg"
 STATE_LAST_ZIP = "last_bundle_zip"
 STATE_LAST_META = "last_meta"
 STATE_SELECTED_ITEM = "selected_item_index"
+STATE_SCROLL_REORDER = "scroll_to_reorder"
 
 # auth states
 STATE_AUTH_OK = "auth_ok"
@@ -192,6 +194,8 @@ section[data-testid="stSidebar"] .stMarkdown h3 { font-size: 14px; letter-spacin
 .stButton button { min-height: 24px !important; }
 button[kind="secondary"] { padding: 0.1rem 0.42rem !important; }
 [data-testid="stImage"] img { object-fit: cover; }
+/* 아이콘 버튼은 너무 길어지지 않게 최소 폭을 낮춤 */
+.stButton button p { line-height: 1 !important; }
 
 /* Softer divider */
 hr { opacity: 0.18; }
@@ -977,6 +981,20 @@ def main():
 
         # 3) Reorder / delete
         ms_section("3) 순서 변경 / 삭제")
+        st.markdown('<div id="reorder-area"></div>', unsafe_allow_html=True)
+        if st.session_state.get(STATE_SCROLL_REORDER):
+            st.session_state[STATE_SCROLL_REORDER] = False
+            components.html(
+                """
+                <script>
+                setTimeout(function(){
+                    const el = window.parent.document.getElementById('reorder-area');
+                    if (el) { el.scrollIntoView({behavior:'auto', block:'start'}); }
+                }, 80);
+                </script>
+                """,
+                height=0,
+            )
         items: List[ImgItem] = st.session_state[STATE_ITEMS]
 
         if not items:
@@ -987,16 +1005,16 @@ def main():
                 selected = None
                 st.session_state[STATE_SELECTED_ITEM] = None
 
-            # 상단 이동 버튼: 오른쪽 정렬. 버튼 사이 간격은 현재 기준보다 적당히 줄인 형태.
-            tool = st.columns([0.70, 0.036, 0.036, 0.036, 0.036, 0.156])
+            # 상단 이동 버튼: 버튼 간격을 넓혀 겹침 방지
+            tool = st.columns([0.60, 0.040, 0.022, 0.040, 0.022, 0.040, 0.022, 0.040, 0.174])
             with tool[1]:
-                btn_top = st.button("⇈", key="move_top", disabled=(selected is None or selected == 0), use_container_width=True)
-            with tool[2]:
-                btn_up = st.button("▴", key="move_up", disabled=(selected is None or selected == 0), use_container_width=True)
+                btn_top = st.button("⇈", key="move_top", disabled=(selected is None or selected == 0))
             with tool[3]:
-                btn_down = st.button("▾", key="move_down", disabled=(selected is None or selected >= len(items) - 1), use_container_width=True)
-            with tool[4]:
-                btn_bottom = st.button("⇊", key="move_bottom", disabled=(selected is None or selected >= len(items) - 1), use_container_width=True)
+                btn_up = st.button("▴", key="move_up", disabled=(selected is None or selected == 0))
+            with tool[5]:
+                btn_down = st.button("▾", key="move_down", disabled=(selected is None or selected >= len(items) - 1))
+            with tool[7]:
+                btn_bottom = st.button("⇊", key="move_bottom", disabled=(selected is None or selected >= len(items) - 1))
 
             if selected is not None:
                 if btn_top:
@@ -1004,36 +1022,40 @@ def main():
                     items.insert(0, item)
                     st.session_state[STATE_ITEMS] = items
                     st.session_state[STATE_SELECTED_ITEM] = 0
+                    st.session_state[STATE_SCROLL_REORDER] = True
                     st.rerun()
                 if btn_up:
                     items[selected - 1], items[selected] = items[selected], items[selected - 1]
                     st.session_state[STATE_ITEMS] = items
                     st.session_state[STATE_SELECTED_ITEM] = selected - 1
+                    st.session_state[STATE_SCROLL_REORDER] = True
                     st.rerun()
                 if btn_down:
                     items[selected + 1], items[selected] = items[selected], items[selected + 1]
                     st.session_state[STATE_ITEMS] = items
                     st.session_state[STATE_SELECTED_ITEM] = selected + 1
+                    st.session_state[STATE_SCROLL_REORDER] = True
                     st.rerun()
                 if btn_bottom:
                     item = items.pop(selected)
                     items.append(item)
                     st.session_state[STATE_ITEMS] = items
                     st.session_state[STATE_SELECTED_ITEM] = len(items) - 1
+                    st.session_state[STATE_SCROLL_REORDER] = True
                     st.rerun()
 
             for i, it in enumerate(items):
                 # 체크박스 / 썸네일 / 파일명 / 삭제 버튼을 분리해 겹침 방지
-                row = st.columns([0.05, 0.085, 0.67, 0.055, 0.14], vertical_alignment="center")
+                row = st.columns([0.055, 0.125, 0.585, 0.070, 0.165], vertical_alignment="center")
                 with row[0]:
                     checked = st.checkbox("", value=(st.session_state.get(STATE_SELECTED_ITEM) == i), key=f"select_item_{i}", label_visibility="collapsed")
                 with row[1]:
-                    st.image(_make_thumb(it.pil), width=52)
+                    st.image(_make_thumb(it.pil), width=50)
                 with row[2]:
                     short = it.name if len(it.name) <= 58 else (it.name[:55] + "…")
                     st.markdown(
-                        f"<div style='font-size:11px; font-weight:400; line-height:1.15; letter-spacing:-0.25px; margin-left:4px;'>{i+1}. {short}</div>"
-                        f"<div style='font-size:10px; color:#777; line-height:1.15; margin-top:2px; margin-left:4px;'>원본: {it.pil.size[0]}×{it.pil.size[1]}</div>",
+                        f"<div style='font-size:10.5px; font-weight:400; line-height:1.18; letter-spacing:-0.25px; margin-left:18px;'>{i+1}. {short}</div>"
+                        f"<div style='font-size:9.5px; color:#777; line-height:1.15; margin-top:2px; margin-left:18px;'>원본: {it.pil.size[0]}×{it.pil.size[1]}</div>",
                         unsafe_allow_html=True,
                     )
                 with row[3]:
@@ -1042,9 +1064,11 @@ def main():
                 prev_selected = st.session_state.get(STATE_SELECTED_ITEM)
                 if checked and prev_selected != i:
                     st.session_state[STATE_SELECTED_ITEM] = i
+                    st.session_state[STATE_SCROLL_REORDER] = True
                     st.rerun()
                 if (not checked) and prev_selected == i:
                     st.session_state[STATE_SELECTED_ITEM] = None
+                    st.session_state[STATE_SCROLL_REORDER] = True
                     st.rerun()
 
                 if delete:
