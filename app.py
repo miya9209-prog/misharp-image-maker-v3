@@ -213,33 +213,23 @@ hr { opacity: 0.18; }
 /* tighten caption */
 [data-testid="stCaptionContainer"] { opacity: 0.80; }
 
-/* Reorder list */
-.ms-order-guide {
-  margin: -4px 0 10px 0;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(77,111,78,0.07);
-  border: 1px solid rgba(77,111,78,0.12);
-  font-size: 13px;
-  line-height: 1.55;
-  color: rgba(0,0,0,0.70);
-}
-.ms-row-selected {
-  padding: 8px 6px;
-  border-radius: 14px;
-  background: rgba(77,111,78,0.08);
-  border: 1px solid rgba(77,111,78,0.18);
-}
-.ms-row-normal {
-  padding: 8px 6px;
-  border-radius: 14px;
-  border: 1px solid rgba(0,0,0,0.04);
-}
-.ms-selected-text {
-  font-size: 13px;
+/* Compact reorder list */
+.ms-order-name {
+  font-size: 12.5px;
   font-weight: 800;
-  letter-spacing: -0.2px;
-  color: #3f5d40;
+  line-height: 1.35;
+  letter-spacing: -0.25px;
+  margin-top: 1px;
+}
+.ms-order-meta {
+  font-size: 11.2px;
+  line-height: 1.25;
+  color: rgba(0,0,0,0.62);
+  margin-top: 2px;
+}
+.ms-compact-gap { height: 4px; }
+div[data-testid="column"] .stButton button {
+  min-height: 34px !important;
 }
 </style>
             """,
@@ -846,6 +836,21 @@ def _move_selected_to_position(pos_1based: int):
     st.session_state[STATE_ITEMS] = items
 
 
+def _delete_img_by_sha(sha1: str):
+    items: List[ImgItem] = st.session_state[STATE_ITEMS]
+    remove_idx = next((idx for idx, it in enumerate(items) if it.sha1 == sha1), None)
+    if remove_idx is None:
+        return
+    removed = items.pop(remove_idx)
+    st.session_state[STATE_ITEMS] = items
+    if st.session_state.get(STATE_SELECTED_SHA) == removed.sha1:
+        st.session_state[STATE_SELECTED_SHA] = items[min(remove_idx, len(items)-1)].sha1 if items else None
+    seen = st.session_state[STATE_SEEN]
+    if removed.sha1 in seen:
+        seen.remove(removed.sha1)
+    st.session_state[STATE_SEEN] = seen
+
+
 def _reset_all():
     st.session_state[STATE_ITEMS] = []
     st.session_state[STATE_SEEN] = set()
@@ -1065,76 +1070,38 @@ def main():
                 selected_name = selected_item.name if len(selected_item.name) <= 34 else (selected_item.name[:31] + "…")
                 selected_label = f"현재 선택: {selected_idx + 1}번 · {selected_name}"
 
-            st.markdown(
-                '<div class="ms-order-guide">체크박스로 이미지를 선택한 뒤 상단/하단 버튼으로 빠르게 순서를 바꿉니다. 여러 번 누를 필요 없이, 아래의 <b>몇 번째로 이동</b> 기능으로 원하는 위치에 바로 보낼 수 있습니다.</div>',
-                unsafe_allow_html=True,
-            )
-
-            ctrl = st.columns([0.34, 0.16, 0.16, 0.17, 0.17])
-            with ctrl[0]:
-                st.markdown(f'<div class="ms-selected-text">{selected_label}</div>', unsafe_allow_html=True)
+            ctrl = st.columns([0.72, 0.07, 0.07, 0.07, 0.07])
             with ctrl[1]:
-                if st.button("▲ 위로", key="move_selected_up", disabled=(selected_idx is None or selected_idx == 0), use_container_width=True):
-                    _move_selected(-1)
-                    st.rerun()
+                st.button("▲", key="move_selected_up", disabled=(selected_idx is None or selected_idx == 0), use_container_width=True, on_click=_move_selected, args=(-1,))
             with ctrl[2]:
-                if st.button("▼ 아래로", key="move_selected_down", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=True):
-                    _move_selected(1)
-                    st.rerun()
+                st.button("▼", key="move_selected_down", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=True, on_click=_move_selected, args=(1,))
             with ctrl[3]:
-                if st.button("맨 위로", key="move_selected_top", disabled=(selected_idx is None or selected_idx == 0), use_container_width=True):
-                    _move_selected_to_position(1)
-                    st.rerun()
+                st.button("⇧", key="move_selected_top", disabled=(selected_idx is None or selected_idx == 0), use_container_width=True, on_click=_move_selected_to_position, args=(1,))
             with ctrl[4]:
-                if st.button("맨 아래로", key="move_selected_bottom", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=True):
-                    _move_selected_to_position(len(items))
-                    st.rerun()
-
-            st.caption("이미지 앞 체크박스 선택 → 순서 이동 → 생성하기 순서로 사용하세요.")
+                st.button("⇩", key="move_selected_bottom", disabled=(selected_idx is None or selected_idx == len(items) - 1), use_container_width=True, on_click=_move_selected_to_position, args=(len(items),))
 
             for i, it in enumerate(items):
                 selected = (st.session_state.get(STATE_SELECTED_SHA) == it.sha1)
-                st.markdown(f'<div class="{"ms-row-selected" if selected else "ms-row-normal"}">', unsafe_allow_html=True)
-                row = st.columns([0.07, 0.14, 0.56, 0.11, 0.12])
+                row = st.columns([0.045, 0.105, 0.77, 0.08], gap="small")
                 with row[0]:
                     key = f"sel_{it.sha1}"
                     st.session_state[key] = selected
                     st.checkbox("선택", key=key, label_visibility="collapsed", on_change=_select_img, args=(it.sha1,))
                 with row[1]:
-                    st.image(_make_thumb(it.pil), use_column_width=True)
+                    st.image(_make_thumb(it.pil), width=58)
                 with row[2]:
-                    short = it.name if len(it.name) <= 48 else (it.name[:45] + "…")
-                    st.markdown(f"**{i+1}. {short}**  \n원본: {it.pil.size[0]}×{it.pil.size[1]}")
+                    short = it.name if len(it.name) <= 42 else (it.name[:39] + "…")
+                    st.markdown(f'<div class="ms-order-name">{i+1}. {short}</div><div class="ms-order-meta">원본: {it.pil.size[0]}×{it.pil.size[1]}</div>', unsafe_allow_html=True)
                 with row[3]:
-                    if st.button("선택", key=f"pick_{it.sha1}", use_container_width=True):
-                        st.session_state[STATE_SELECTED_SHA] = it.sha1
-                        st.rerun()
-                with row[4]:
-                    delete = st.button("삭제", key=f"del_{it.sha1}", use_container_width=True)
-
-                st.markdown('</div>', unsafe_allow_html=True)
-
-                if delete:
-                    removed = items.pop(i)
-                    st.session_state[STATE_ITEMS] = items
-                    if st.session_state.get(STATE_SELECTED_SHA) == removed.sha1:
-                        st.session_state[STATE_SELECTED_SHA] = items[min(i, len(items)-1)].sha1 if items else None
-                    seen = st.session_state[STATE_SEEN]
-                    if removed.sha1 in seen:
-                        seen.remove(removed.sha1)
-                    st.session_state[STATE_SEEN] = seen
-                    st.rerun()
+                    st.button("✕", key=f"del_{it.sha1}", use_container_width=True, on_click=_delete_img_by_sha, args=(it.sha1,))
+                st.markdown('<div class="ms-compact-gap"></div>', unsafe_allow_html=True)
 
             selected_idx = _selected_index(items)
-            move_row = st.columns([0.40, 0.20, 0.16, 0.24])
-            with move_row[0]:
-                st.markdown("**선택한 상품의 진열순위**")
+            move_row = st.columns([0.74, 0.10, 0.08, 0.08])
             with move_row[1]:
                 target_pos = st.number_input("번호", min_value=1, max_value=len(items), value=(selected_idx + 1 if selected_idx is not None else 1), step=1, label_visibility="collapsed", key="target_pos")
             with move_row[2]:
-                if st.button("번호로 변경", key="move_selected_to_number", disabled=(selected_idx is None), use_container_width=True):
-                    _move_selected_to_position(int(target_pos))
-                    st.rerun()
+                st.button("변경", key="move_selected_to_number", disabled=(selected_idx is None), use_container_width=True, on_click=_move_selected_to_position, args=(int(st.session_state.get("target_pos", selected_idx + 1 if selected_idx is not None else 1)),))
             with move_row[3]:
                 st.caption(f"총 {len(items)}장")
 
