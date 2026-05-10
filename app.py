@@ -982,19 +982,9 @@ def main():
         # 3) Reorder / delete
         ms_section("3) 순서 변경 / 삭제")
         st.markdown('<div id="reorder-area"></div>', unsafe_allow_html=True)
-        if st.session_state.get(STATE_SCROLL_REORDER):
-            st.session_state[STATE_SCROLL_REORDER] = False
-            components.html(
-                """
-                <script>
-                setTimeout(function(){
-                    const el = window.parent.document.getElementById('reorder-area');
-                    if (el) { el.scrollIntoView({behavior:'auto', block:'start'}); }
-                }, 80);
-                </script>
-                """,
-                height=0,
-            )
+        # 순서 변경 시 화면이 번쩍이며 위로 올라갔다 내려오는 현상을 막기 위해
+        # 강제 scrollIntoView 스크립트는 사용하지 않습니다.
+        st.session_state[STATE_SCROLL_REORDER] = False
         items: List[ImgItem] = st.session_state[STATE_ITEMS]
 
         if not items:
@@ -1022,27 +1012,19 @@ def main():
                     items.insert(0, item)
                     st.session_state[STATE_ITEMS] = items
                     st.session_state[STATE_SELECTED_ITEM] = 0
-                    st.session_state[STATE_SCROLL_REORDER] = True
-                    st.rerun()
                 if btn_up:
                     items[selected - 1], items[selected] = items[selected], items[selected - 1]
                     st.session_state[STATE_ITEMS] = items
                     st.session_state[STATE_SELECTED_ITEM] = selected - 1
-                    st.session_state[STATE_SCROLL_REORDER] = True
-                    st.rerun()
                 if btn_down:
                     items[selected + 1], items[selected] = items[selected], items[selected + 1]
                     st.session_state[STATE_ITEMS] = items
                     st.session_state[STATE_SELECTED_ITEM] = selected + 1
-                    st.session_state[STATE_SCROLL_REORDER] = True
-                    st.rerun()
                 if btn_bottom:
                     item = items.pop(selected)
                     items.append(item)
                     st.session_state[STATE_ITEMS] = items
                     st.session_state[STATE_SELECTED_ITEM] = len(items) - 1
-                    st.session_state[STATE_SCROLL_REORDER] = True
-                    st.rerun()
 
             for i, it in enumerate(items):
                 # 체크박스 / 썸네일 / 파일명 / 삭제 버튼을 분리해 겹침 방지
@@ -1064,12 +1046,8 @@ def main():
                 prev_selected = st.session_state.get(STATE_SELECTED_ITEM)
                 if checked and prev_selected != i:
                     st.session_state[STATE_SELECTED_ITEM] = i
-                    st.session_state[STATE_SCROLL_REORDER] = True
-                    st.rerun()
                 if (not checked) and prev_selected == i:
                     st.session_state[STATE_SELECTED_ITEM] = None
-                    st.session_state[STATE_SCROLL_REORDER] = True
-                    st.rerun()
 
                 if delete:
                     removed = items.pop(i)
